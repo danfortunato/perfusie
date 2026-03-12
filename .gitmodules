@@ -1,0 +1,3 @@
+[submodule "terminal-cells"]
+	path = terminal-cells
+	url = https://github.com/tgavrilchenko/terminal-cells.git
