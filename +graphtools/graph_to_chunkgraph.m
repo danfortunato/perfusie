@@ -1,11 +1,19 @@
-function cgrph = graph_to_chunkgraph(G, superedges)
+function cgrph = graph_to_chunkgraph(G, superedges, opts)
+
+arguments
+    G
+    superedges
+    opts.tol = 1e-6
+end
 
 chnkrs = cell(length(superedges), 1);
-opts = [];
-opts.ifclosed = false;
+chopts = [];
+chopts.ifclosed = false;
+chopts.cparams = [];
+chopts.cparams.eps = opts.tol;
 for k = 1:length(superedges)
     nodes = G.Nodes.coords(superedges(k).nodes, 1:2);
-    chnkrs{k} = chunkerfit(nodes.', opts);
+    chnkrs{k} = chunkerfit(nodes.', chopts);
 end
 
 Gd = graphtools.superedge_graph(G, superedges, directed=true);
