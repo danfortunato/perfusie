@@ -1,6 +1,8 @@
 %%% Graph parameters
 file = fullfile('terminal-cells', 'data', 'traces_L2', '1_Tr9L.traces');
 smooth = 1;
+fittol = 1e-3;
+n = 16;
 outer = true;
 
 %%% Physical parameters
@@ -19,9 +21,7 @@ tol     = 1e-6;
 
 % Import the graph, smooth it, and discretize it
 t = tic;
-G = graphtools.import_graph(file);
-[G, superedges] = graphtools.smooth_graph(G, smooth);
-cgrph = graphtools.graph_to_chunkgraph(G, superedges);
+cgrph = graphtools.fit(file, smooth=smooth, tol=fittol, order=n);
 fprintf('Time to process graph:      %gs\n', toc(t));
 
 t = tic;
