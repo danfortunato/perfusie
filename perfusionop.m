@@ -265,7 +265,9 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
                     A{3,3} = @(tau,tol) 0.5*tau + Sp(tau,tol);
                     R{3,3} = @(tau,tol) tau;
 
-                    cormat = chunkerkernevalmat(op.outer, Skern, op.cgrph, struct(corrections=true));
+                    % Target the merged edge chunkers (same points, same order)
+                    % since chunkerkernevalmat mishandles chunkgraph targets.
+                    cormat = chunkerkernevalmat(op.outer, Skern, echnks, struct(corrections=true));
                     out2in = @(tau,tol) real(chunkerkerneval(outer, Skern, tau, echnks, ...
                         struct(cormat=cormat, accel=true, eps=tol)));
 
@@ -281,7 +283,9 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
                     I = eye(size(Sp));
                     A{3,3} = 0.5*I + Sp;
                     R{3,3} = speye(op.outer.npt);
-                    out2in = chunkerkernevalmat(op.outer, Skern,  op.cgrph);
+                    % Target the merged edge chunkers (same points, same order)
+                    % since chunkerkernevalmat mishandles chunkgraph targets.
+                    out2in = chunkerkernevalmat(op.outer, Skern,  merge(op.cgrph.echnks));
                     in2out = chunkerkernevalmat(op.cgrph, Spkern, op.outer);
                 end
 
