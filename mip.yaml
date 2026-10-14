@@ -1,0 +1,21 @@
+name: perfusie
+description: "A perfusion solver for 1D graphs in 2D tissue using chunkIE"
+version: "0.1.0"
+license: ""
+homepage: "https://github.com/danfortunato/perfusie"
+repository: "https://github.com/danfortunato/perfusie"
+dependencies: [chunkie, minboundsuite]
+
+paths:
+  - path: "."
+
+extra_paths:
+  examples:
+    - path: "examples"
+  tests:
+    - path: "tests"
+
+test_script: test_perfusie.m
+
+builds:
+  - architectures: [any]
