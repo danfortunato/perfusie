@@ -21,12 +21,12 @@ method  = 'gmres';
 schur   = true;
 fmm     = true;
 precond = abs(alpha) < 0.01;
-tol     = 1e-10;
+tol     = 1e-5;
 
 % Import the graph, smooth it, and discretize it
 G = graphtools.import_graph(file);
 [G, superedges] = graphtools.smooth_graph(G, smooth);
-cgrph = graphtools.graph_to_chunkgraph(G, superedges, tol=1e-3);
+cgrph = graphtools.graph_to_chunkgraph(G, superedges, tol=1e-3, order=4);
 
 xtarg_far = 90;
 ytarg_far = 15;
@@ -42,7 +42,7 @@ shg
 
 %% Perform the sweep
 
-nref = 9;
+nref = 8;
 utarg_far = zeros(nref+1, 1);
 utarg_close = zeros(nref+1, 1);
 for k = 1:nref+1
@@ -59,6 +59,10 @@ end
 
 %% Plot convergence of the error, taking the reference solution to be the
 %  solution on the finest panelization
+
+%nref = 8;
+%ufar_close = utarg_far(1:end-1);
+%utarg_close = utarg_close(1:end-1);
 
 err_far   = abs(utarg_far(1:end-1)   - utarg_far(end))   / abs(utarg_far(end));
 err_close = abs(utarg_close(1:end-1) - utarg_close(end)) / abs(utarg_close(end));
