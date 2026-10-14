@@ -358,7 +358,7 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
                         A = @(x) [ A{1,1}(x(ii),tol) + A{1,2}*x(bb) + A{1,3}(x(jj),tol)  ;
                                    A{2,1}*x(ii)      + A{2,2}*x(bb)                      ;
                                    A{3,1}(x(ii),tol)                + A{3,3}(x(jj),tol) ];
-                        R = @(x) [ R{1,1}(x(ii),tol) ; R{2,2}*x(bb) ; R{3,3}*x(jj) ];
+                        R = @(x) [ R{1,1}(x(ii),tol) ; R{2,2}*x(bb) ; R{3,3}(x(jj),tol) ];
                         rhs = [rhs{1} ; rhs{2} ; rhs{3}];
                     else
                         A = @(x) [ A{1,1}(x(ii),tol) + A{1,2}*x(bb) ;
