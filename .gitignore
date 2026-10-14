@@ -5,3 +5,6 @@
 *.mex*
 *.m~
 *.asv
+
+# Generated plots
+*.png
