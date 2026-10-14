@@ -12,7 +12,7 @@
 % in the vertex panel size h = h0 * 2^-k.
 
 %%% Graph parameters
-file = fullfile('terminal-cells', 'data', 'traces_L1', '1_Tr9L.traces');
+name = 'L1_1_Tr9L';   % Terminal cell (see data/)
 smooth = 1;
 fittol = 1e-3;
 order  = 16;
@@ -33,7 +33,7 @@ precond = abs(alpha) < 0.01;
 tol     = 1e-10;
 
 % Import the graph, smooth it, and discretize it
-G = graphtools.import_graph(file);
+G = graphtools.gallery(name);
 [G, superedges] = graphtools.smooth_graph(G, smooth);
 cgrph0 = graphtools.graph_to_chunkgraph(G, superedges, tol=fittol, order=order);
 

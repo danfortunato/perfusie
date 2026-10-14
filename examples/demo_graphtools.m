@@ -1,7 +1,7 @@
 %% Smooth and plot the graph
 
 close all
-G = graphtools.gallery('traces_L2', '1_Tr9L');
+G = graphtools.gallery('L2_1_Tr9L');
 smooth = 1.5;
 fittol = 1e-4;
 

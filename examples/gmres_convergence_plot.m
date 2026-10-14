@@ -2,12 +2,12 @@
 % inverse permeabilities alpha.
 
 %% Graph parameters
-file = fullfile('terminal-cells', 'data', 'traces_L2', '1_Tr9L.traces');
+name = 'L2_1_Tr9L';   % Terminal cell (see data/)
 smooth = 1;
 fittol = 1e-4;
 n = 16;
 nover = 1;
-cgrph = graphtools.fit(file, smooth=smooth, tol=fittol, order=n, nover=nover);
+cgrph = graphtools.fit(graphtools.gallery(name), smooth=smooth, tol=fittol, order=n, nover=nover);
 
 %% Physical parameters
 root  = 1;     % Indices of trachea roots

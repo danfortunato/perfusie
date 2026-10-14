@@ -1,5 +1,5 @@
 %%% Graph parameters
-file = fullfile('terminal-cells', 'data', 'traces_L2', '1_Tr9L.traces');
+name = 'L2_1_Tr9L';   % Terminal cell (see data/)
 smooth = 1;
 fittol = 1e-3;
 n = 16;
@@ -23,7 +23,7 @@ tol      = 1e-6;
 
 % Import the graph, smooth it, and discretize it
 t = tic;
-cgrph = graphtools.fit(file, smooth=smooth, tol=fittol, order=n, nover=nover);
+cgrph = graphtools.fit(graphtools.gallery(name), smooth=smooth, tol=fittol, order=n, nover=nover);
 fprintf('Time to process graph:      %gs\n', toc(t));
 
 t = tic;

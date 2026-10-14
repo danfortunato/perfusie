@@ -5,7 +5,7 @@
 % be performed at these locations, not uniform refinement.)
 
 %%% Graph parameters
-file = fullfile('terminal-cells', 'data', 'traces_L1', '1_Tr9L.traces');
+name = 'L1_1_Tr9L';   % Terminal cell (see data/)
 smooth = 1;
 outer = false;
 
@@ -24,7 +24,7 @@ precond = abs(alpha) < 0.01;
 tol     = 1e-5;
 
 % Import the graph, smooth it, and discretize it
-G = graphtools.import_graph(file);
+G = graphtools.gallery(name);
 [G, superedges] = graphtools.smooth_graph(G, smooth);
 cgrph = graphtools.graph_to_chunkgraph(G, superedges, tol=1e-3, order=4);
 
