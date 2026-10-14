@@ -130,12 +130,16 @@ ylabel('$\|u - u_\mathrm{ref}\| / \|u_\mathrm{ref}\|$', interpreter='latex', fon
 title(sprintf('Adaptive vertex refinement (order = %d)', order), fontsize=14)
 shg
 
-%% Save plots to PNG
+%% Save plots to PNG in the package's figures/ folder
 
-exportgraphics(figure(1), 'convergence_adaptive_graph_initial.png', resolution=200)
-exportgraphics(figure(2), 'convergence_adaptive_graph_finest.png',  resolution=200)
-exportgraphics(figure(3), 'convergence_adaptive_vs_h.png',          resolution=200)
-exportgraphics(figure(4), 'convergence_adaptive_vs_npt.png',        resolution=200)
+figdir = fullfile(fileparts(fileparts(mfilename('fullpath'))), 'figures');
+if ( ~isfolder(figdir) )
+    mkdir(figdir);
+end
+exportgraphics(figure(1), fullfile(figdir, 'convergence_adaptive_graph_initial.png'), resolution=200)
+exportgraphics(figure(2), fullfile(figdir, 'convergence_adaptive_graph_finest.png'),  resolution=200)
+exportgraphics(figure(3), fullfile(figdir, 'convergence_adaptive_vs_h.png'),          resolution=200)
+exportgraphics(figure(4), fullfile(figdir, 'convergence_adaptive_vs_npt.png'),        resolution=200)
 
 %% Local helpers
 
