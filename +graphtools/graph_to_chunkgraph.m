@@ -5,6 +5,7 @@ arguments
     superedges
     opts.tol = 1e-6
     opts.order = 16
+    opts.nover = 0
 end
 
 chnkrs = cell(length(superedges), 1);
@@ -12,6 +13,7 @@ chopts = [];
 chopts.ifclosed = false;
 chopts.cparams = [];
 chopts.cparams.eps = opts.tol;
+chopts.cparams.nover = opts.nover;
 chopts.pref = [];
 chopts.pref.k = opts.order;
 for k = 1:length(superedges)
