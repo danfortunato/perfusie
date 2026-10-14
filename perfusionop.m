@@ -589,20 +589,25 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
 
         end
 
-        function check_conservation(op, u, vars, opts)
+        function vals = check_conservation(op, u, vars, opts)
         %CHECK_CONSERVATION   Print a check of global O2 conservation.
         %   CHECK_CONSERVATION(OP, U, VARS) prints four quantities that
-        %   should agree: the ingress flux at the root computed (1) from the
-        %   edge constant b and (2) by differentiating v, (3) the total flux
-        %   ∫σ into the tissue, and (4) the total absorption φ²∫u, computed
-        %   with a uniform grid over the tissue. It then prints the relative
-        %   difference between (1) and (4).
+        %   should agree: the total ingress flux through the root vertices
+        %   computed (1) from the edge constants and (2) by differentiating
+        %   v, (3) the total flux ∫σ into the tissue, and (4) the total
+        %   absorption φ²∫u, computed with a uniform grid over the tissue.
+        %   It then prints the relative difference between (1) and (4).
+        %
+        %   The ingress flux sums, over every root vertex and every edge
+        %   incident to it, the flux a v' leaving the root along that edge
+        %   (Prop. "Conservation of O2" in the paper).
+        %
+        %   VALS = CHECK_CONSERVATION(...) also returns the four quantities
+        %   in a struct with fields ingress, ingress_dv, int_sigma, and
+        %   absorption.
         %
         %   CHECK_CONSERVATION(OP, U, VARS, ngrid=N) uses an N-by-N grid for
         %   (4) (default 800).
-        %
-        %   This assumes a single root vertex, incident to edge 1 at the
-        %   start of that edge.
 
             arguments
                 op
@@ -613,23 +618,40 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
 
             fprintf('Values:\n\n');
 
-            % idx = op.sigma_starts(iedge):op.sigma_starts(iedge+1)-1;
-            % Qsigma = op.iintegral(op.cgrph.echnks(iedge), sigma(idx));
-            % Qch = Qsigma((ich-1)*op.n + (1:op.n));
-            % flux_root = -1/op.xi * (interp_start * Qch + b(iedge));
-
-            flux_root1 = -1/op.xi * vars.b(op.root);
-            fprintf('    (1)  (Qσ(root)+b)/ξ  = %.16g\n', flux_root1);
-
-            iedge = 1;
-            ich = 1;
-            Dleg = lege.dermat(op.n);
-            ds = vecnorm(op.cgrph.echnks(iedge).d(:,:,ich)).';
-            Dch = Dleg ./ ds;
-            interp_start = lege.matrin(op.n, -1);
-            interp_end   = lege.matrin(op.n,  1);
-            flux_root2 = -1/op.xi * interp_start * Dch * u.channel{iedge}((ich-1)*op.n + (1:op.n));
-            fprintf('    (2)  U''(root)/ξ      = %.16g\n', flux_root2);
+            % Sum the ingress flux over each root and each incident edge. The
+            % incidence sign p is -1 if the edge starts at the root (s = 0)
+            % and +1 if it ends there (s = L), and the ingress through that
+            % edge is p*(a v') evaluated at the root. On an edge,
+            % a v' = v'/xi = Qσ + b/xi.
+            n = op.n;
+            Dleg = lege.dermat(n);
+            ingress = 0;
+            ingress_dv = 0;
+            for vert = op.root(:).'
+                edge_ids = op.cgrph.vstruc{vert}{1};
+                edge_dir = op.cgrph.vstruc{vert}{2};
+                for k = 1:numel(edge_ids)
+                    j = edge_ids(k);
+                    p = edge_dir(k);
+                    chnkr = op.cgrph.echnks(j);
+                    sigma_j = vars.sigma(op.sigma_starts(j):op.sigma_starts(j+1)-1);
+                    if ( p == -1 )
+                        Qsigma = 0;
+                        ich = find(chnkr.adj(1,:) <= 0, 1);
+                        interp = lege.matrin(n, -1);
+                    else
+                        Qsigma = sum(chnkr.wts(:) .* sigma_j);
+                        ich = find(chnkr.adj(2,:) <= 0, 1);
+                        interp = lege.matrin(n, 1);
+                    end
+                    ingress = ingress + p * (Qsigma + vars.b(j)/op.xi);
+                    ds = vecnorm(chnkr.d(:,:,ich)).';
+                    vch = u.channel{j}((ich-1)*n + (1:n));
+                    ingress_dv = ingress_dv + p * (interp * (Dleg ./ ds) * vch) / op.xi;
+                end
+            end
+            fprintf('    (1)  ingress (b)     = %.16g\n', ingress);
+            fprintf('    (2)  ingress (v'')    = %.16g\n', ingress_dv);
 
             w = op.cgrph.wts(:);
             int_sigma = sum(vars.sigma .* w);
@@ -664,8 +686,13 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
             fprintf('    (4)  ∫uϕ²            = %.16g\n', int_u);
 
             fprintf('\nConservation relative error:\n\n');
-            fprintf('    |(1)-(4)| / |(1)| = %g\n', abs(flux_root1 - int_u) / abs(flux_root1));
+            fprintf('    |(1)-(4)| / |(1)| = %g\n', abs(ingress - int_u) / abs(ingress));
             fprintf('\n');
+
+            if ( nargout > 0 )
+                vals = struct(ingress=ingress, ingress_dv=ingress_dv, ...
+                              int_sigma=int_sigma, absorption=int_u);
+            end
         end
 
     end

@@ -80,6 +80,33 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
             end
         end
 
+        function conservationWithAnyRoots(tc)
+            % Roots at the start of an edge (1), at the end of an edge (4),
+            % at the degree-3 junction (2), and at two vertices (1 and 3).
+            % v = 1 on every edge at every root, and the ingress flux summed
+            % over all roots and incident edges equals ∫σ and the absorption.
+            for root = {1, 4, 2, [1 3]}
+                r = root{1};
+                op = perfusionop(tc.tree, tc.params{:}, alpha=0.1, root=r);
+                [u, vars] = op.solve(method='direct');
+                for vert = r
+                    edge_ids = op.cgrph.vstruc{vert}{1};
+                    edge_dir = op.cgrph.vstruc{vert}{2};
+                    for k = 1:numel(edge_ids)
+                        v = edgeEndValues(op, u, edge_ids(k));
+                        tc.verifyEqual(v((edge_dir(k)+3)/2), 1, ...
+                            sprintf('root=%s edge %d', mat2str(r), edge_ids(k)), AbsTol=tc.tol);
+                    end
+                end
+                vals = [];
+                evalc('vals = op.check_conservation(u, vars, ngrid=200);');
+                msg = sprintf('root=%s', mat2str(r));
+                tc.verifyEqual(vals.ingress, vals.int_sigma, msg, RelTol=1e-10);
+                tc.verifyEqual(vals.ingress_dv, vals.int_sigma, msg, RelTol=1e-6);
+                tc.verifyEqual(vals.absorption, vals.int_sigma, msg, RelTol=1e-2);
+            end
+        end
+
         function absorptionEqualsIngressWithOuterBoundary(tc)
             % With a no-flux outer boundary, all O2 entering at the root is
             % absorbed in the disk: φ² ∫ u = ingress flux. The area
