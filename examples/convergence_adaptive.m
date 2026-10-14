@@ -1,7 +1,7 @@
 % Self-convergence test with adaptive (dyadic) refinement into the vertices
 % of the graph. Vertices and branchpoints are where the singularities of the
 % solution live, so resolving them with progressively finer panels (rather
-% than uniformly refining the whole graph as in test_convergence.m) should
+% than uniformly refining the whole graph as in convergence_uniform.m) should
 % give much faster convergence.
 %
 % At each refinement level we split the panel touching each vertex (i.e.
