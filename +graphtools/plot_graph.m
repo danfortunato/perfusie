@@ -1,4 +1,14 @@
 function plot_graph(G, opts)
+%PLOT_GRAPH   Plot a traced network at its spatial coordinates.
+%   PLOT_GRAPH(G) plots the graph or digraph G with nodes placed at
+%   G.Nodes.coords(:,1:2).
+%
+%   PLOT_GRAPH(G, Name=Value) sets options:
+%     root          - if true, circle node 1, the root (default false).
+%     vertex_number - if true, label every node whose degree is not 2,
+%                     i.e. branch points and tips (default false).
+%     edge_number   - if true, label each edge with its index, or with
+%                     G.Edges.superedge_id if present (default false).
 
 arguments
     G

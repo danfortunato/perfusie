@@ -190,12 +190,14 @@ end
 end
 
 function d = pair_dist_xy(coords, a, b)
+%PAIR_DIST_XY   Distance in the xy-plane between nodes A and B.
 c0 = coords(a, 1:2);
 c1 = coords(b, 1:2);
 d = hypot(c0(1) - c1(1), c0(2) - c1(2));
 end
 
 function edges = edge_endnodes_numeric(G)
+%EDGE_ENDNODES_NUMERIC   Edge endpoints of G as numeric node indices.
 end_nodes = G.Edges.EndNodes;
 if isnumeric(end_nodes)
     edges = end_nodes;
@@ -218,6 +220,7 @@ end
 end
 
 function adj = build_adjacency(n, edges)
+%BUILD_ADJACENCY   Adjacency lists for N nodes from an edge list.
 adj = cell(n, 1);
 for i = 1:size(edges, 1)
     u = edges(i, 1);
@@ -228,6 +231,7 @@ end
 end
 
 function d = degree_from_adj(adj, active)
+%DEGREE_FROM_ADJ   Degree of each active node, counting active neighbors.
 n = numel(adj);
 d = zeros(n, 1);
 for i = 1:n
@@ -239,6 +243,7 @@ end
 end
 
 function nb = active_neighbors(neighbor_list, active)
+%ACTIVE_NEIGHBORS   Entries of NEIGHBOR_LIST that are active.
 if isempty(neighbor_list)
     nb = zeros(0, 1);
     return;
@@ -247,6 +252,7 @@ nb = neighbor_list(active(neighbor_list));
 end
 
 function edges = adjacency_to_edges(adj, active)
+%ADJACENCY_TO_EDGES   Edge list (u < v) among active nodes.
 edges = zeros(0, 2);
 for u = 1:numel(adj)
     if ~active(u)
@@ -262,6 +268,7 @@ end
 end
 
 function e = unique_undirected_edges(e)
+%UNIQUE_UNDIRECTED_EDGES   Remove duplicate edges, ignoring direction.
 if isempty(e)
     return;
 end
@@ -271,6 +278,7 @@ e = unique([u v], 'rows', 'stable');
 end
 
 function S = build_graph_from_original_nodes(G, orig_nodes, orig_edges)
+%BUILD_GRAPH_FROM_ORIGINAL_NODES   Graph on a subset of Gs nodes, keeping node data and orig_id.
 orig_nodes = orig_nodes(:);
 n = numel(orig_nodes);
 

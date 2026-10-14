@@ -192,6 +192,7 @@ meta.superedge_nodes_orig = edge_nodes;
 end
 
 function L = polyline_length_xy(coords, ids, is_cycle)
+%POLYLINE_LENGTH_XY   Length in the xy-plane of the polyline through IDS, optionally closed.
 if numel(ids) < 2
     L = 0;
     return;

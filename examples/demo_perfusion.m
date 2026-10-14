@@ -1,3 +1,6 @@
+% Solve the perfusion model on a traced terminal cell, check O2
+% conservation, and plot the tissue partial pressure.
+
 %%% Graph parameters
 name = 'L2_1_Tr9L';   % Terminal cell (see data/)
 smooth = 1;

@@ -1,4 +1,22 @@
 function plot_perfusion(op, u, opts)
+%PLOT_PERFUSION   Plot a perfusion solution in the tissue and network.
+%   PLOT_PERFUSION(OP, U) plots the solution U returned by OP.solve: the
+%   tissue concentration on a grid covering the outer boundary (or the
+%   padded bounding box of the network, if there is none), and the network
+%   concentration as colored lines along each edge.
+%
+%   PLOT_PERFUSION(OP, U, Name=Value) sets options:
+%     nplot           - grid points per dimension (default 400).
+%     linewidth       - width of the network lines (default 3).
+%     contour         - if true, overlay contour lines (default false).
+%     partialpressure - if true, plot the tissue partial pressure u/P,
+%                       on the same 0-to-1 scale as the network
+%                       (default true).
+%     forcesmooth     - passed to chunkerkerneval; if true, use smooth
+%                       quadrature everywhere, which is faster but less
+%                       accurate near the network (default true).
+%
+%   See also PERFUSIONOP.
 
 arguments
     op perfusionop

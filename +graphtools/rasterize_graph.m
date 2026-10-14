@@ -67,6 +67,7 @@ BW(sub2ind([ny, nx], rows_v, cols_v)) = true;
 end
 
 function edges = numeric_endnodes(G)
+%NUMERIC_ENDNODES   Edge endpoints of G as numeric node indices.
 end_nodes = G.Edges.EndNodes;
 if isnumeric(end_nodes)
     edges = end_nodes;
@@ -88,6 +89,7 @@ end
 end
 
 function [rows, cols] = xy_to_sub(x, y, xmin, ymin, dx, ny, nx)
+%XY_TO_SUB   Grid row and column subscripts of points (X, Y), clamped to the grid.
 cols = round((x - xmin) ./ dx) + 1;
 rows = round((y - ymin) ./ dx) + 1;
 cols = min(max(cols, 1), nx);

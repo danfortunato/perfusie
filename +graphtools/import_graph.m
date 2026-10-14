@@ -135,6 +135,7 @@ G.Edges.length = edge_len;
 clear cleanup_obj; %#ok<CLSCR>
 
     function ensure_node_capacity()
+    %ENSURE_NODE_CAPACITY   Grow the coords and radius buffers if full.
         if node_count > size(coords, 1)
             new_n = max(2 * size(coords, 1), node_count);
             coords(end + 1:new_n, :) = 0;
@@ -143,6 +144,7 @@ clear cleanup_obj; %#ok<CLSCR>
     end
 
     function ensure_edge_capacity()
+    %ENSURE_EDGE_CAPACITY   Grow the edge buffers if full.
         next_edge = edge_count + 1;
         if next_edge > size(edge_s, 1)
             new_n = max(2 * size(edge_s, 1), next_edge);
@@ -159,6 +161,7 @@ sq_dist = sum((existing_coords - query_coord) .^ 2, 2);
 end
 
 function [keys, vals] = ordered_attributes(node)
+%ORDERED_ATTRIBUTES   Names and values of an XML nodes attributes, in order.
 attrs = node.getAttributes();
 n = attrs.getLength();
 keys = cell(1, n);
@@ -171,6 +174,7 @@ end
 end
 
 function tf = is_gzip_file(filename)
+%IS_GZIP_FILE   True if the file starts with the gzip magic number.
 fid = fopen(filename, 'r');
 if fid < 0
     error('trace_file_to_G:openFailed', 'Could not open file: %s', filename);
@@ -181,6 +185,7 @@ tf = numel(sig) == 2 && sig(1) == 31 && sig(2) == 139;
 end
 
 function cleanup_tmp_dir(tmp_dir)
+%CLEANUP_TMP_DIR   Delete a temporary directory if it exists.
 if isfolder(tmp_dir)
     rmdir(tmp_dir, 's');
 end

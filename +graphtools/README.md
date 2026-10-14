@@ -1,36 +1,30 @@
-# Terminal-Cell Trace Reader (MATLAB)
+# graphtools
 
-- `graph_from_traces.m`
-  - MATLAB port of Python `trace_file_to_G` from
-    `terminal-cells/data_analysis_code/convert_trace_to_network.py`.
-  - Reads gzipped XML `.traces` files and returns a `graph` with:
-    - `G.Nodes.coords` (`[x y z]`, with y-axis flipped),
-    - `G.Nodes.radius`,
-    - `G.Edges.length` (2D projected edge length in `x,y`).
+Tools for turning traced terminal-cell networks into chunkgraphs for
+`perfusionop`. Several are MATLAB ports of Python routines in
+[terminal-cells](https://github.com/tgavrilchenko/terminal-cells)
+(`data_analysis_code/`).
 
-- `demo_read_trace_file.m`
-  - Loads one sample file and plots the tree.
+- `gallery` loads a cell from the package's `data/` folder by name,
+  e.g. `graphtools.gallery('L2_1_Tr9L')`.
+- `import_graph` reads a `.traces` file into a MATLAB `graph` with node
+  coordinates and radii (port of `trace_file_to_G`).
+- `smooth_graph` splits a graph into super-edges (chains between branch
+  points and tips) and smooths each one with a Gaussian along arc length.
+- `superedge_graph` builds the coarse graph whose edges are the
+  super-edges.
+- `graph_to_chunkgraph` fits each super-edge with a chunker and assembles a
+  chunkgraph.
+- `fit` does all of the above in one call: smooth, then fit a chunkgraph.
+- `coarsen_graph` removes degree-2 nodes, optionally keeping a maximum node
+  spacing (port of `get_features.coarsen_graph`).
+- `rasterize_graph` draws a graph's edges onto a logical image.
+- `plot_graph` plots a graph at its spatial coordinates.
+- `digraph_to_graph` converts a digraph to an undirected graph.
 
-- `coarsen_graph.m`
-  - MATLAB port of Python `get_features.coarsen_graph`.
-  - Removes degree-2 nodes (except root), optionally enforces a
-    `max_separation`, and optionally relabels by root distance.
-
-- `rasterize_graph.m`
-  - Rasterizes graph edges from `G.Nodes.coords(:,1:2)` to a logical grid
-    with spacing `dx`.
-
-- `smooth_superedges_gaussian.m`
-  - Finds super-edges (degree-2 chains) and applies Gaussian smoothing
-    along arc length per super-edge.
-
-- `superedge_graph.m`
-  - Builds a coarse superedge-incidence graph/digraph from `superedges`.
-  - Each edge corresponds to one super-edge path, directed by path traversal.
-
-## Usage
+Typical use:
 
 ```matlab
-run('matlab/setup.m');
-G = graph_from_traces('terminal-cells/data/traces_L1/10_Tr9L.traces');
+G = graphtools.gallery('L2_1_Tr9L');
+cgrph = graphtools.fit(G, smooth=1, tol=1e-3);
 ```

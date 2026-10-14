@@ -1,3 +1,6 @@
+% Load a traced terminal cell, smooth it, fit a chunkgraph, and plot each
+% stage along with the super-edge graph.
+
 %% Smooth and plot the graph
 
 close all

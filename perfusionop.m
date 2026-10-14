@@ -1,31 +1,77 @@
 classdef perfusionop %#ok<*PROP,*PROPLC>
+%PERFUSIONOP   Integral-equation solver for network perfusion of thin tissue.
+%   OP = PERFUSIONOP(CGRPH) sets up the coupled PDE-ODE perfusion model on
+%   the network CGRPH, a chunkgraph embedded in the plane:
+%
+%     (Δ - φ²) u = 0                in the tissue, off the network,
+%     λ [u_n] - (η v - u) = 0       on each edge (membrane permeation),
+%     (a v')' - [u_n] = 0           on each edge (conservation),
+%     v continuous, Σ ±a v' = 0     at each non-root vertex (Kirchhoff),
+%     v = 1                         at each root vertex,
+%
+%   where u is the tissue concentration, v the network concentration,
+%   [u_n] the jump in normal derivative across an edge, and a = 1/xi the
+%   scaled channel cross-sectional area. With OUTER = true, the tissue is
+%   bounded by a circle with zero-flux conditions; otherwise it fills the
+%   plane.
+%
+%   The tissue concentration is represented as a single-layer potential
+%   u = S σ on the network (plus S τ on the outer boundary), and on each
+%   edge v = xi Q² σ + a_k + b_k s, where Q is arc-length integration from
+%   the start of the edge. This yields a second-kind-like system for σ (and
+%   τ) coupled to two constants (a_k, b_k) per edge.
+%
+%   OP = PERFUSIONOP(CGRPH, Name=Value) sets parameters:
+%     xi    - inverse scaled channel area, 1/a (default 0).
+%     alpha - inverse membrane permeability, λ (default 0).
+%     phi   - Yukawa parameter φ; 1/φ is the decay length in the tissue
+%             (default 0).
+%     P     - tissue-air partition (Henry's) constant, η (default 0.03).
+%     root  - indices of the root (ingress) vertices of CGRPH (default 1).
+%     outer - if true, enclose the network in a no-flux circle 1.3 times
+%             the radius of its minimal bounding circle (default false).
+%
+%   Example:
+%     cgrph = graphtools.fit(graphtools.gallery('L1_1_Tr9L'));
+%     op = perfusionop(cgrph, xi=0.004, phi=0.1);
+%     [u, vars] = op.solve();
+%     plot_perfusion(op, u)
+%
+%   PERFUSIONOP methods:
+%     solve              - Solve the model.
+%     discretize         - Assemble the discretized system.
+%     check_conservation - Print a check of global O2 conservation.
+%     size               - Number of unknowns.
+%
+%   See also PLOT_PERFUSION, GRAPHTOOLS.FIT.
 
     properties
-        cgrph
-        root
-        xi
-        alpha
-        phi
-        P
-        nverts
-        nedges
-        n
-        nch
-        npt
-        nbc
-        ndof
-        sigma_starts
-        L
-        s
-        introw1
-        introw2
-        iintegral
-        outer
+        cgrph        % Network, a chunkgraph
+        root         % Indices of the root vertices
+        xi           % Inverse scaled channel area
+        alpha        % Inverse membrane permeability
+        phi          % Yukawa parameter
+        P            % Henry's constant
+        nverts       % Number of vertices
+        nedges       % Number of edges
+        n            % Legendre order of each chunk
+        nch          % Total number of chunks on the network
+        npt          % Total number of discretization nodes on the network
+        nbc          % Number of edge constants (two per edge)
+        ndof         % Total number of unknowns
+        sigma_starts % Index of the first node of each edge in σ (plus end)
+        L            % Arc length of each edge
+        s            % Arc-length coordinate at the nodes of each edge
+        introw1      % Row vectors giving ∫σ over each edge
+        introw2      % Row vectors giving (Q²σ)(L) on each edge
+        iintegral    % Handle to the arc-length antiderivative routine
+        outer        % Outer boundary chunker, or [] if none
     end
 
     methods
 
         function op = perfusionop(cgrph, opts)
+        %PERFUSIONOP   Construct a perfusion operator. See PERFUSIONOP.
             arguments
                 cgrph            chunkgraph
                 opts.xi    (1,1) double = 0
@@ -71,6 +117,10 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
         end
 
         function varargout = size(op, dim)
+        %SIZE   Size of the discretized system.
+        %   SZ = SIZE(OP) returns [NDOF NDOF], where NDOF is the number of
+        %   unknowns. [M, N] = SIZE(OP) and SIZE(OP, DIM) work as for
+        %   matrices.
             [m, n] = deal(op.ndof);
             if ( nargout < 2 )
                 if ( nargin == 1 )
@@ -87,6 +137,22 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
         end
 
         function [A, rhs, R] = discretize(op, opts)
+        %DISCRETIZE   Assemble the discretized system.
+        %   [A, RHS, R] = DISCRETIZE(OP) returns the dense system matrix A,
+        %   right-hand side RHS, and right preconditioner R, with unknowns
+        %   ordered [σ; a; b; τ] (τ only if OP has an outer boundary). The
+        %   system to solve is A*R*y = RHS with x = R*y.
+        %
+        %   DISCRETIZE(OP, Name=Value) sets options:
+        %     blocks  - if true, return A, R, and RHS as cell arrays of
+        %               blocks, with block rows/columns for (σ, [a; b], τ)
+        %               (default false).
+        %     fmm     - if true, return the dense-operator blocks as
+        %               function handles f(x, tol) applied with the FMM.
+        %               Implies blocks = true (default false).
+        %     precond - if true, right-precondition the σ block with the
+        %               hypersingular operator D' on each edge; useful when
+        %               alpha is small (default false).
             arguments
                 op
                 opts.blocks  = false
@@ -312,6 +378,37 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
         end
 
         function [u, vars, info] = solve(op, opts)
+        %SOLVE   Solve the perfusion model.
+        %   [U, VARS] = SOLVE(OP) solves the model and returns the solution
+        %   in a struct U with fields
+        %     channel - cell array with the network concentration v at the
+        %               nodes of each edge,
+        %     bulk    - function handle U.bulk(X, Y, OPTS) that evaluates
+        %               the tissue concentration u at points (X, Y), passing
+        %               OPTS to chunkerkerneval,
+        %   and the raw unknowns in a struct VARS with fields sigma, a, b,
+        %   and tau (if OP has an outer boundary).
+        %
+        %   [U, VARS, INFO] = SOLVE(OP, ...) also returns the GMRES flag,
+        %   relres, iter, and resvec in the struct INFO (empty for direct
+        %   solves).
+        %
+        %   SOLVE(OP, Name=Value) sets options:
+        %     method   - 'direct', 'gmres', or 'auto' (default). 'auto'
+        %                uses a direct solve below 10000 unknowns and GMRES
+        %                with the FMM and Schur complement above.
+        %     fmm      - if true, apply dense blocks with the FMM; GMRES
+        %                only (default false).
+        %     schur    - if true, eliminate the edge constants (a, b) and
+        %                solve the Schur complement for σ (and τ)
+        %                (default false).
+        %     precond  - if true, use D' right preconditioning; see
+        %                DISCRETIZE (default false).
+        %     showcond - if true, print the condition number of the
+        %                (preconditioned) system. Disables the FMM
+        %                (default false).
+        %     tol      - GMRES tolerance (default 1e-10).
+        %     maxit    - maximum GMRES iterations (default OP.ndof).
 
             arguments
                 op
@@ -469,6 +566,7 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
             outer = op.outer;
             Skern = kernel('helm', 's', 1i*op.phi);
             function u = u_bulk(x, y, opts)
+            %U_BULK   Evaluate the tissue concentration at points (X, Y).
                 if ( nargin < 3 )
                     opts = [];
                 end
@@ -492,6 +590,19 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
         end
 
         function check_conservation(op, u, vars, opts)
+        %CHECK_CONSERVATION   Print a check of global O2 conservation.
+        %   CHECK_CONSERVATION(OP, U, VARS) prints four quantities that
+        %   should agree: the ingress flux at the root computed (1) from the
+        %   edge constant b and (2) by differentiating v, (3) the total flux
+        %   ∫σ into the tissue, and (4) the total absorption φ²∫u, computed
+        %   with a uniform grid over the tissue. It then prints the relative
+        %   difference between (1) and (4).
+        %
+        %   CHECK_CONSERVATION(OP, U, VARS, ngrid=N) uses an N-by-N grid for
+        %   (4) (default 800).
+        %
+        %   This assumes a single root vertex, incident to edge 1 at the
+        %   start of that edge.
 
             arguments
                 op
@@ -562,9 +673,12 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
 end
 
 function imat = myintmat(chnkr)
-%INTMAT returns the matrix of integration in arc length along the 
-% chunker object. The constant of integration is selected such that the
-% integral is zero at the left end of the first chunk of the chunker. 
+%MYINTMAT   Dense matrix of arc-length integration along a chunker.
+%   IMAT = MYINTMAT(CHNKR) returns the matrix that maps values of f at the
+%   nodes of CHNKR to values of its arc-length antiderivative Q f at the
+%   same nodes. The constant of integration is chosen so that Q f is zero
+%   at the left end of the first chunk. Chunks are visited in the order
+%   given by CHNKR.adj.
 
     n = chnkr.k;
     nch = chnkr.nch;
@@ -596,10 +710,21 @@ function imat = myintmat(chnkr)
 end
 
 function int = dintegral(chnkr, f)
+%DINTEGRAL   Definite arc-length integral over a chunker.
+%   INT = DINTEGRAL(CHNKR, F) returns the integral of F, given at the nodes
+%   of CHNKR, over the whole chunker.
     int = sum(chnkr.wts(:) .* f);
 end
 
 function int = iintegral(chnkr, f, p)
+%IINTEGRAL   Repeated arc-length antiderivative along each edge.
+%   INT = IINTEGRAL(CHNKR, F) returns Q F at the nodes of CHNKR, where
+%   (Q F)(t) is the integral of F from the start of the chunker to t.
+%   INT = IINTEGRAL(CHNKR, F, P) applies Q P times (default 1).
+%
+%   If CHNKR is a chunkgraph, Q is applied separately on each edge, with F
+%   ordered edge by edge as in the chunkgraph. Chunks within each chunker
+%   are assumed to be stored in order along the curve.
 
     if ( nargin < 3 )
         p = 1;
@@ -640,6 +765,11 @@ function int = iintegral(chnkr, f, p)
 end
 
 function int = iintegralT(chnkr, f, p)
+%IINTEGRALT   Transpose of the discrete arc-length antiderivative.
+%   INT = IINTEGRALT(CHNKR, F, P) applies the transpose of the discretized
+%   operator Q from IINTEGRAL, P times (default 1). Q^T maps quadrature-
+%   weighted values to the integral from each node to the end of the curve.
+%   Accepts a chunker or a chunkgraph, as for IINTEGRAL.
 
     if ( nargin < 3 )
         p = 1;
@@ -680,6 +810,10 @@ function int = iintegralT(chnkr, f, p)
 end
 
 function introw = introw(chnkr, p)
+%INTROW   Row vector evaluating a repeated antiderivative at the end.
+%   R = INTROW(CHNKR, P) returns the row vector R such that R*F equals
+%   (Q^P F)(L), the P-fold arc-length antiderivative of F evaluated at the
+%   end of CHNKR (default P = 1, so that R*F is the integral of F).
 
     if ( nargin < 2 )
         p = 1;
@@ -692,6 +826,10 @@ end
 
 function [x, flag, relres, iter, resvec] = right_gmres(A, b, restart, tol, maxit, P)
 %RIGHT_GMRES   GMRES with right preconditioning.
+%   [X, FLAG, RELRES, ITER, RESVEC] = RIGHT_GMRES(A, B, RESTART, TOL,
+%   MAXIT, P) solves A*X = B by running GMRES on A*P*Y = B and returning
+%   X = P*Y. A and P may be matrices or function handles. The other inputs
+%   and outputs are as for GMRES.
 
 if ( isa(A, 'function_handle') )
     afun = A;
@@ -719,6 +857,9 @@ x = pfun(y);
 end
 
 function B = blockdiag(A, n)
+%BLOCKDIAG   Sparse block-diagonal part of a matrix.
+%   B = BLOCKDIAG(A, N) returns a sparse matrix holding the N-by-N diagonal
+%   blocks of the square matrix A, whose size must be a multiple of N.
 
 m = size(A, 1);
 p = m / n;

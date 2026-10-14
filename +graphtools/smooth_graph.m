@@ -4,12 +4,14 @@ function [G_smooth, superedges] = smooth_graph(G, sigma, opts)
 %   smooths geometry using G.Nodes.coords(:,1:2).
 %
 %   A super-edge is a maximal chain where interior nodes have degree 2 and
-%   endpoints have degree ~= 2 (or a closed degree-2 cycle).
+%   endpoints have degree ~= 2 (or a closed degree-2 cycle). SUPEREDGES is
+%   a struct array with fields nodes (node indices in traversal order),
+%   is_cycle, and length (polyline length in x/y, before smoothing).
 %
 %   Required:
 %     G     - MATLAB graph with node variable `coords`
 %     sigma - Gaussian standard deviation in the same units as coordinates
-
+%
 %   Optional (name-value via opts):
 %     opts.truncate        - kernel radius multiplier (default: 3)
 %     opts.fix_endpoints   - keep super-edge endpoints fixed (default: true)
@@ -86,6 +88,7 @@ end
 end
 
 function segments = extract_superedges(edges, deg, n, xy)
+%EXTRACT_SUPEREDGES   Split the graph into super-edges: chains between nodes of degree ~= 2, then any remaining degree-2 cycles.
 [adj_nodes, adj_edges] = adjacency_with_edge_ids(edges, n);
 visited = false(size(edges, 1), 1);
 segments = struct('nodes', {}, 'is_cycle', {}, 'length', {});
@@ -176,6 +179,7 @@ while true
 end
 
     function L = polyline_length(node_ids, close_loop)
+    %POLYLINE_LENGTH   Length of the polyline through the given nodes, optionally closed.
         if numel(node_ids) < 2
             L = 0;
             return;
@@ -190,6 +194,7 @@ end
 end
 
 function [adj_nodes, adj_edges] = adjacency_with_edge_ids(edges, n)
+%ADJACENCY_WITH_EDGE_IDS   Neighbor and incident-edge lists for each node.
 adj_nodes = cell(n, 1);
 adj_edges = cell(n, 1);
 for e = 1:size(edges, 1)
@@ -203,6 +208,7 @@ end
 end
 
 function P_new = smooth_open_segment(P, sigma, truncate, fix_endpoints, taper_endpoints, redistribute, equal_spacing)
+%SMOOTH_OPEN_SEGMENT   Smooth an open polyline, with optional endpoint fixing, tapering, and equal spacing.
 if size(P, 1) < 3
     P_new = P;
     return;
@@ -241,6 +247,7 @@ end
 end
 
 function P_new = smooth_cycle_segment(P, sigma, truncate, redistribute, equal_spacing)
+%SMOOTH_CYCLE_SEGMENT   Smooth a closed polyline, with optional equal spacing.
 if size(P, 1) < 3
     P_new = P;
     return;
@@ -258,6 +265,7 @@ end
 end
 
 function P_sm = smooth_open_by_tangent(P, sigma, truncate)
+%SMOOTH_OPEN_BY_TANGENT   Smooth an open polyline by smoothing its unit tangents, keeping segment lengths and both endpoints.
 V = diff(P, 1, 1);
 lens = hypot(V(:, 1), V(:, 2));
 if ~any(lens > 0)
@@ -280,6 +288,7 @@ P_sm = P_sm + tau .* delta;
 end
 
 function P_sm = smooth_cycle_by_tangent(P, sigma, truncate)
+%SMOOTH_CYCLE_BY_TANGENT   Smooth a closed polyline by smoothing its unit tangents, keeping segment lengths and closure.
 V = [diff(P, 1, 1); P(1, :) - P(end, :)];
 lens = hypot(V(:, 1), V(:, 2));
 if ~any(lens > 0)
@@ -305,6 +314,7 @@ P_sm = Pc(1:end-1, :);
 end
 
 function T_sm = smooth_tangents_open(T, seg_pos, sigma, truncate)
+%SMOOTH_TANGENTS_OPEN   Gaussian-weighted average of unit tangents by arc length, renormalized.
 n = size(T, 1);
 T_sm = zeros(n, 2);
 cutoff = truncate * sigma;
@@ -328,6 +338,7 @@ end
 end
 
 function T_sm = smooth_tangents_cycle(T, seg_pos, L, sigma, truncate)
+%SMOOTH_TANGENTS_CYCLE   Like SMOOTH_TANGENTS_OPEN, with periodic arc-length distance.
 n = size(T, 1);
 T_sm = zeros(n, 2);
 cutoff = truncate * sigma;
@@ -352,6 +363,7 @@ end
 end
 
 function P_rec = reconstruct_from_tangents_open(p0, lens, T)
+%RECONSTRUCT_FROM_TANGENTS_OPEN   Polyline from a start point, segment lengths, and unit tangents.
 nseg = numel(lens);
 P_rec = zeros(nseg + 1, 2);
 P_rec(1, :) = p0;
@@ -361,6 +373,7 @@ end
 end
 
 function Pc = reconstruct_from_tangents_cycle(p0, lens, T)
+%RECONSTRUCT_FROM_TANGENTS_CYCLE   Same as the open version; the last point should return to the first.
 nseg = numel(lens);
 Pc = zeros(nseg + 1, 2);
 Pc(1, :) = p0;
@@ -370,6 +383,7 @@ end
 end
 
 function P_out = enforce_open_endpoints(P_in, P_ref)
+%ENFORCE_OPEN_ENDPOINTS   Shift a polyline linearly in arc length so its endpoints match P_REF.
 n = size(P_in, 1);
 if n < 2
     P_out = P_in;
@@ -392,6 +406,7 @@ P_out([1, end], :) = P_ref([1, end], :);
 end
 
 function P_eq = redistribute_open_equal(P, npt)
+%REDISTRIBUTE_OPEN_EQUAL   Resample an open polyline at NPT points equally spaced in arc length.
 if npt <= 1
     P_eq = P;
     return;
@@ -417,6 +432,7 @@ P_eq = [x, y];
 end
 
 function P_eq = redistribute_cycle_equal(P, npt)
+%REDISTRIBUTE_CYCLE_EQUAL   Resample a closed polyline at NPT points equally spaced in arc length.
 if npt <= 2
     P_eq = P;
     return;
@@ -450,6 +466,7 @@ P_eq = [x, y];
 end
 
 function [su, Pu] = unique_curve_samples(s, P)
+%UNIQUE_CURVE_SAMPLES   Drop repeated arc-length samples so S is strictly increasing.
 tol = 1e-14;
 keep = [true; diff(s) > tol];
 su = s(keep);
@@ -462,6 +479,7 @@ end
 end
 
 function U = unit_rows(V)
+%UNIT_ROWS   Normalize rows of V; zero rows copy the first nonzero row (or [1 0]).
 U = V;
 nr = hypot(V(:, 1), V(:, 2));
 good = nr > 1e-14;
@@ -479,6 +497,7 @@ end
 end
 
 function edges = numeric_endnodes(G)
+%NUMERIC_ENDNODES   Edge endpoints of G as numeric node indices.
 end_nodes = G.Edges.EndNodes;
 if isnumeric(end_nodes)
     edges = end_nodes;

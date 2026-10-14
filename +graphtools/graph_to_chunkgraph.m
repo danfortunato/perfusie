@@ -1,4 +1,19 @@
 function cgrph = graph_to_chunkgraph(G, superedges, opts)
+%GRAPH_TO_CHUNKGRAPH   Fit a chunkgraph to the super-edges of a graph.
+%   CGRPH = GRAPH_TO_CHUNKGRAPH(G, SUPEREDGES) fits each super-edge of G
+%   (from GRAPHTOOLS.SMOOTH_GRAPH) with an open chunker through its node
+%   coordinates G.Nodes.coords(:,1:2), and assembles them into a chunkgraph.
+%   The chunkgraph's vertices are the super-vertices of G, numbered as in
+%   GRAPHTOOLS.SUPEREDGE_GRAPH, and edge k is super-edge k, oriented from
+%   SUPEREDGES(k).nodes(1) to SUPEREDGES(k).nodes(end).
+%
+%   CGRPH = GRAPH_TO_CHUNKGRAPH(G, SUPEREDGES, Name=Value) sets options:
+%     tol   - tolerance for the chunker fit (default 1e-6).
+%     order - Legendre order of each chunk (default 16).
+%     nover - number of times to oversample (uniformly refine) each fitted
+%             chunker (default 0).
+%
+%   See also GRAPHTOOLS.FIT, CHUNKERFIT, CHUNKGRAPH.
 
 arguments
     G
