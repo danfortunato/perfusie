@@ -2,8 +2,9 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
 %TESTPERFUSIONOP   Unit tests for PERFUSIONOP on small synthetic networks.
 %   The networks are a single straight segment and a Y-shaped tree with
 %   its root at vertex 1. Tests check the boundary and vertex conditions of
-%   the solution, flux conservation, agreement between solvers, and the
-%   arc-length integration helpers.
+%   the solution, flux conservation, the perfectly conducting limit
+%   (xi = 0), agreement between solvers, and the arc-length integration
+%   helpers.
 
     properties
         segment  % Single straight edge from vertex 1 (root) to vertex 2
@@ -99,6 +100,23 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
                 struct(accel=true, forcesmooth=true));
             absorbed = op.phi^2 * (2*pi/nth) * sum(wr(:) .* rr(:) .* sum(uu, 2));
             tc.verifyEqual(absorbed, ingress, RelTol=1e-3);
+        end
+
+        function perfectlyConductingNetwork(tc)
+            % With xi = 0 (infinite channel area), v = 1 on the whole
+            % network and σ solves the first-kind equation λσ + Sσ = η.
+            % Compare with a direct solve of that equation.
+            phi = 2;  P = 0.03;
+            S = chunkermat(tc.tree, kernel('helm', 's', 1i*phi), struct(rcip=false));
+            for alpha = [0 0.1]
+                op = perfusionop(tc.tree, xi=0, phi=phi, P=P, alpha=alpha);
+                [u, vars] = op.solve(method='direct');
+                tc.verifyEqual(vertcat(u.channel{:}), ones(op.npt, 1), AbsTol=tc.tol);
+                sigma = (S + alpha*eye(op.npt)) \ (P*ones(op.npt, 1));
+                tc.verifyLessThan(norm(vars.sigma - sigma) / norm(sigma), 1e-12);
+                [~, vars2] = op.solve(method='gmres', schur=true, precond=(alpha == 0), tol=1e-12);
+                tc.verifyLessThan(norm(vars2.sigma - vars.sigma) / norm(vars.sigma), 1e-9);
+            end
         end
 
         function solversAgree(tc)
