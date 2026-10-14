@@ -307,16 +307,17 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
 
         end
 
-        function [u, vars] = solve(op, opts)
+        function [u, vars, info] = solve(op, opts)
 
             arguments
                 op
-                opts.method  = 'auto'
-                opts.fmm     = false
-                opts.schur   = false
-                opts.precond = false
-                opts.tol     = 1e-10
-                opts.maxit   = op.ndof
+                opts.method   = 'auto'
+                opts.fmm      = false
+                opts.schur    = false
+                opts.precond  = false
+                opts.showcond = false
+                opts.tol      = 1e-10
+                opts.maxit    = op.ndof
             end
 
             if ( strcmpi(opts.method, 'auto') )
@@ -336,6 +337,11 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
                 opts.fmm = false;
             end
 
+            if ( opts.showcond )
+                opts.fmm = false;
+            end
+
+            info = struct();
             switch lower(opts.method)
                 case 'direct'
                     solve = @(A,b,~) A \ b;
@@ -367,7 +373,18 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
                         rhs = [rhs{1} ; rhs{2}];
                     end
                 end
-                sigma_a_b = solve(A, rhs, R);
+                if ( opts.showcond )
+                    fprintf('cond(A) = %g (%g)\n', cond(full(A*R)), skeel(full(A*R), 2));
+                end
+                if strcmpi(opts.method, 'gmres')
+                    [sigma_a_b, flag, relres, iter, resvec] = solve(A, rhs, R);
+                    info.flag = flag;
+                    info.relres = relres;
+                    info.iter = iter;
+                    info.resvec = resvec;
+                else
+                    sigma_a_b = solve(A, rhs, R);
+                end
             else
                 Abb = decomposition(A{2,2});
                 rhsb = rhs{2};
@@ -403,7 +420,19 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
                     Sii = Aii - Aib*(Abb\Abi);
                 end
                 fi = rhsi - Aib*(Abb\rhsb);
-                sigma = solve(Sii, fi, Rii);
+                if ( opts.showcond )
+                    fprintf('cond(S) = %g (%g)\n', cond(full(Sii*Rii)), skeel(full(Sii*Rii), 2));
+                    % fprintf('cond(Abb) = %g (%g)\n', cond(full(A{2,2})), skeel(full(A{2,2})));
+                end
+                if strcmpi(opts.method, 'gmres')
+                    [sigma, flag, relres, iter, resvec] = solve(Sii, fi, Rii);
+                    info.flag = flag;
+                    info.relres = relres;
+                    info.iter = iter;
+                    info.resvec = resvec;
+                else
+                    sigma = solve(Sii, fi, Rii);
+                end
                 a_b = Abb \ (rhsb-Abi*sigma);
                 if ( ~isempty(op.outer) )
                     tau   = sigma(op.npt+1:end);
