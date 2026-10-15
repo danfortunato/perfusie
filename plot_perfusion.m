@@ -9,7 +9,7 @@ function plot_perfusion(op, u, opts)
 %     nplot           - grid points per dimension (default 400).
 %     linewidth       - width of the network lines (default 3).
 %     contour         - if true, overlay contour lines (default false).
-%     partialpressure - if true, plot the tissue partial pressure u/P,
+%     partialpressure - if true, plot the tissue partial pressure u/eta,
 %                       on the same 0-to-1 scale as the network
 %                       (default true).
 %     forcesmooth     - passed to chunkerkerneval; if true, use smooth
@@ -56,7 +56,7 @@ uu(in) = u.bulk(xx(in), yy(in), eval_opts);
 
 if ( opts.partialpressure )
     title('Partial pressure')
-    uu = uu/op.P;
+    uu = uu/op.eta;
 else
     title('Concentration')
 end

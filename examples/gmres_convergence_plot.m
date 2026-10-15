@@ -1,5 +1,5 @@
 % Compare GMRES convergence with and without right preconditioning across
-% inverse permeabilities alpha.
+% inverse permeabilities lambda.
 
 %% Graph parameters
 name = 'L2_1_Tr9L';   % Terminal cell (see data/)
@@ -10,51 +10,51 @@ nover = 1;
 cgrph = graphtools.fit(graphtools.gallery(name), smooth=smooth, tol=fittol, order=n, nover=nover);
 
 %% Physical parameters
-root  = 1;     % Indices of trachea roots
-xi    = 0.004; % Inverse channel width scaled by diffusion ratio
-phi   = 0.1;   % Yukawa parameter
-P     = 0.03;  % Henry's constant
-outer = true;
+root   = 1;     % Indices of trachea roots
+alpha  = 250;   % Scaled channel area (1/xi)
+phi    = 0.1;   % Yukawa parameter
+eta    = 0.03;  % Henry's constant
+outer  = true;
 
 %%% Solver parameters
 method   = 'gmres';
 schur    = true;
 fmm      = false;
 tol      = 1e-10;
-alpha = [0 0.01 0.1 1];
+lambda = [0 0.01 0.1 1];
 
-resvec_pre   = cell(length(alpha), 1);
-resvec_unpre = cell(length(alpha), 1);
-for k = 1:length(alpha)
-    fprintf('alpha = %g, precond = true\n', alpha(k));
-    op = perfusionop(cgrph, root=root, outer=outer, xi=xi, alpha=alpha(k), phi=phi, P=P);
+resvec_pre   = cell(length(lambda), 1);
+resvec_unpre = cell(length(lambda), 1);
+for k = 1:length(lambda)
+    fprintf('lambda = %g, precond = true\n', lambda(k));
+    op = perfusionop(cgrph, root=root, outer=outer, alpha=alpha, lambda=lambda(k), phi=phi, eta=eta);
     [~, ~, info] = op.solve(method=method, schur=schur, fmm=fmm, precond=true, tol=tol);
     resvec_pre{k} = info.resvec / info.resvec(1);
-    fprintf('alpha = %g, precond = false\n', alpha(k));
+    fprintf('lambda = %g, precond = false\n', lambda(k));
     [~, ~, info] = op.solve(method=method, schur=schur, fmm=fmm, precond=false, tol=tol);
     resvec_unpre{k} = info.resvec / info.resvec(1);
 end
 
 %% Plot
 % figure(1), clf
-% for k = 1:length(alpha)
+% for k = 1:length(lambda)
 %     semilogy(resvec_pre{k}, '-o')
 %     hold on
 % end
 % hold off
 % grid on
 % title('Preconditioned')
-% legend('\alpha = 0', '\alpha = 0.01', '\alpha = 0.1', '\alpha = 1')
+% legend('\lambda = 0', '\lambda = 0.01', '\lambda = 0.1', '\lambda = 1')
 % 
 % figure(2), clf
-% for k = 1:length(alpha)
+% for k = 1:length(lambda)
 %     semilogy(resvec_unpre{k}, '-o')
 %     hold on
 % end
 % hold off
 % grid on
 % title('Unpreconditioned')
-% legend('\alpha = 0', '\alpha = 0.01', '\alpha = 0.1', '\alpha = 1')
+% legend('\lambda = 0', '\lambda = 0.01', '\lambda = 0.1', '\lambda = 1')
 
 close all
 figure(1)
@@ -83,7 +83,7 @@ ylim([1e-10 1])
 axis square
 xlabel('GMRES iteration')
 ylabel('Relative residual')
-%legend('\alpha = 1', '\alpha = 0.1', '\alpha = 0.01 (precond)',  '\alpha = 0 (precond)', '\alpha = 0 (no precond)')
+%legend('\lambda = 1', '\lambda = 0.1', '\lambda = 0.01 (precond)',  '\lambda = 0 (precond)', '\lambda = 0 (no precond)')
 ax = gca;
 ax.TickLabelInterpreter = 'latex';
 ax.FontSize = 12;
@@ -96,7 +96,7 @@ cb = colorbar(location='southoutside');
 ticks = linspace(0, 1, 4);
 cb.Limits = [0 1];
 cb.Ticks = ticks;
-cb.TickLabels = flip({'$\alpha = 0$', '$\alpha = 10^{-2}$', '$\alpha = 10^{-1}$', '$\alpha = 1$'});
+cb.TickLabels = flip({'$\lambda = 0$', '$\lambda = 10^{-2}$', '$\lambda = 10^{-1}$', '$\lambda = 1$'});
 cb.TickLabelInterpreter = 'latex';
 cb.FontSize = 12;
 cb.AxisLocation = 'in';

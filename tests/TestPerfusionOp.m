@@ -13,7 +13,7 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
     end
 
     properties (Constant)
-        params = {'xi', 1, 'phi', 2, 'P', 0.03}
+        params = {'xi', 1, 'phi', 2, 'eta', 0.03}
         tol = 1e-10
         % Smooth, positive xi(s) and λ(s) on each edge of the tree
         xif = {@(s) 1 + 0.5*sin(3*s), @(s) 0.5 + s.^2, @(s) 2 - 0.8*cos(2*s)}
@@ -43,8 +43,8 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
         end
 
         function rootValueIsOne(tc)
-            for alpha = [0 0.1]
-                op = perfusionop(tc.tree, tc.params{:}, alpha=alpha);
+            for lambda = [0 0.1]
+                op = perfusionop(tc.tree, tc.params{:}, lambda=lambda);
                 u = op.solve(method='direct');
                 v = edgeEndValues(op, u, 1);
                 tc.verifyEqual(v(1), 1, AbsTol=tc.tol);
@@ -52,7 +52,7 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
         end
 
         function networkIsContinuousAtJunction(tc)
-            op = perfusionop(tc.tree, tc.params{:}, alpha=0.1);
+            op = perfusionop(tc.tree, tc.params{:}, lambda=0.1);
             u = op.solve(method='direct');
             v1 = edgeEndValues(op, u, 1);  % Ends at the junction
             v2 = edgeEndValues(op, u, 2);  % Starts at the junction
@@ -62,7 +62,7 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
         end
 
         function concentrationDecreasesFromRoot(tc)
-            op = perfusionop(tc.segment, tc.params{:}, alpha=0.1);
+            op = perfusionop(tc.segment, tc.params{:}, lambda=0.1);
             u = op.solve(method='direct');
             v = u.channel{1};
             tc.verifyTrue(all(v > 0 & v < 1));
@@ -72,10 +72,10 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
         function ingressFluxEqualsTissueFlux(tc)
             % Integrating the conservation law along the network and using
             % the Kirchhoff and tip conditions, the flux entering at the
-            % root, -a v'(0) = -b_1, equals the total flux into the
+            % root, -α v'(0) = -b_1, equals the total flux into the
             % tissue, the integral of σ.
-            for alpha = [0 0.1]
-                op = perfusionop(tc.tree, tc.params{:}, alpha=alpha);
+            for lambda = [0 0.1]
+                op = perfusionop(tc.tree, tc.params{:}, lambda=lambda);
                 [~, vars] = op.solve(method='direct');
                 ingress = -vars.b(1);
                 tissue = sum(vars.sigma .* op.cgrph.wts(:));
@@ -91,7 +91,7 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
             % over all roots and incident edges equals ∫σ and the absorption.
             for root = {1, 4, 2, [1 3]}
                 r = root{1};
-                op = perfusionop(tc.tree, tc.params{:}, alpha=0.1, root=r);
+                op = perfusionop(tc.tree, tc.params{:}, lambda=0.1, root=r);
                 [u, vars] = op.solve(method='direct');
                 for vert = r
                     edge_ids = op.cgrph.vstruc{vert}{1};
@@ -115,7 +115,7 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
             % With a no-flux outer boundary, all O2 entering at the root is
             % absorbed in the disk: φ² ∫ u = ingress flux. The area
             % integral uses a polar grid, so the tolerance is loose.
-            op = perfusionop(tc.tree, tc.params{:}, alpha=0.1, outer=true);
+            op = perfusionop(tc.tree, tc.params{:}, lambda=0.1, outer=true);
             [u, vars] = op.solve(method='direct');
             ingress = -vars.b(1);
 
@@ -137,24 +137,24 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
             % With xi = 0 (infinite channel area), v = 1 on the whole
             % network and σ solves the first-kind equation λσ + Sσ = η.
             % Compare with a direct solve of that equation.
-            phi = 2;  P = 0.03;
+            phi = 2;  eta = 0.03;
             S = chunkermat(tc.tree, kernel('helm', 's', 1i*phi), struct(rcip=false));
-            for alpha = [0 0.1]
-                op = perfusionop(tc.tree, xi=0, phi=phi, P=P, alpha=alpha);
+            for lambda = [0 0.1]
+                op = perfusionop(tc.tree, xi=0, phi=phi, eta=eta, lambda=lambda);
                 [u, vars] = op.solve(method='direct');
                 tc.verifyEqual(vertcat(u.channel{:}), ones(op.npt, 1), AbsTol=tc.tol);
-                sigma = (S + alpha*eye(op.npt)) \ (P*ones(op.npt, 1));
+                sigma = (S + lambda*eye(op.npt)) \ (eta*ones(op.npt, 1));
                 tc.verifyLessThan(norm(vars.sigma - sigma) / norm(sigma), 1e-12);
-                [~, vars2] = op.solve(method='gmres', schur=true, precond=(alpha == 0), tol=1e-12);
+                [~, vars2] = op.solve(method='gmres', schur=true, precond=(lambda == 0), tol=1e-12);
                 tc.verifyLessThan(norm(vars2.sigma - vars.sigma) / norm(vars.sigma), 1e-9);
             end
         end
 
         function solversAgree(tc)
-            for alpha = [0 0.1]
+            for lambda = [0 0.1]
                 for outer = [false true]
-                    op = perfusionop(tc.tree, tc.params{:}, alpha=alpha, outer=outer);
-                    precond = (alpha == 0);
+                    op = perfusionop(tc.tree, tc.params{:}, lambda=lambda, outer=outer);
+                    precond = (lambda == 0);
                     [~, ref] = op.solve(method='direct');
                     configs = { ...
                         {'method', 'direct', 'schur', true}, ...
@@ -164,7 +164,7 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
                         [~, vars] = op.solve(configs{k}{:}, tol=1e-12);
                         err = norm(vars.sigma - ref.sigma) / norm(ref.sigma);
                         tc.verifyLessThan(err, 1e-9, ...
-                            sprintf('alpha=%g outer=%d %s', alpha, outer, strjoin(string(configs{k}), ' ')));
+                            sprintf('lambda=%g outer=%d %s', lambda, outer, strjoin(string(configs{k}), ' ')));
                     end
                 end
             end
@@ -175,7 +175,7 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
             % preconditioner without a Schur complement.
             tc.assumeTrue(exist('hfmm2d', 'file') > 0, 'fmm2d is not available.');
             for outer = [false true]
-                op = perfusionop(tc.tree, tc.params{:}, alpha=0.1, outer=outer);
+                op = perfusionop(tc.tree, tc.params{:}, lambda=0.1, outer=outer);
                 [~, ref] = op.solve(method='direct');
                 for schur = [false true]
                     [~, vars] = op.solve(method='gmres', fmm=true, schur=schur, tol=1e-12);
@@ -186,7 +186,7 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
         end
 
         function gmresReturnsInfo(tc)
-            op = perfusionop(tc.segment, tc.params{:}, alpha=0.1);
+            op = perfusionop(tc.segment, tc.params{:}, lambda=0.1);
             [~, ~, info] = op.solve(method='gmres', tol=1e-10);
             tc.verifyEqual(info.flag, 0);
             tc.verifyLessThan(info.relres, 1e-10);
@@ -206,7 +206,7 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
             % With xi(s) = 1 + s on each edge: introw1{k}*f = ∫ f,
             % Qxi{k} = s + s²/2, and introwxi{k}*f = (Q xi Q f)(L).
             xi = repmat({@(s) 1 + s}, 1, 3);
-            op = perfusionop(tc.tree, xi=xi, phi=2, P=0.03);
+            op = perfusionop(tc.tree, xi=xi, phi=2, eta=0.03);
             for k = 1:op.nedges
                 s = op.s{k};
                 f = cos(3*s);
@@ -221,25 +221,46 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
         function coefficientFormsAgree(tc)
             % A scalar, one value per edge, one function per edge, and one
             % value per node all give the same operator.
-            ref = perfusionop(tc.tree, xi=0.7, alpha=0.1, phi=2, P=0.03);
+            ref = perfusionop(tc.tree, xi=0.7, lambda=0.1, phi=2, eta=0.03);
             [~, vref] = ref.solve(method='direct');
             npt = ref.npt;
             xis = {0.7*[1 1 1], {@(s) 0.7 + 0*s, 0.7, @(s) 0.7*ones(size(s))}, 0.7*ones(npt, 1)};
-            alphas = {0.1*[1 1 1], {0.1, @(s) 0.1 + 0*s, 0.1}, 0.1*ones(npt, 1)};
+            lambdas = {0.1*[1 1 1], {0.1, @(s) 0.1 + 0*s, 0.1}, 0.1*ones(npt, 1)};
             for k = 1:numel(xis)
-                op = perfusionop(tc.tree, xi=xis{k}, alpha=alphas{k}, phi=2, P=0.03);
+                op = perfusionop(tc.tree, xi=xis{k}, lambda=lambdas{k}, phi=2, eta=0.03);
                 tc.verifyEqual(op.xi, ref.xi);
-                tc.verifyEqual(op.alpha, ref.alpha);
+                tc.verifyEqual(op.lambda, ref.lambda);
                 [~, vars] = op.solve(method='direct');
                 tc.verifyLessThan(norm(vars.sigma - vref.sigma) / norm(vref.sigma), 1e-13);
             end
+        end
+
+        function alphaIsInverseOfXi(tc)
+            % The area alpha and its inverse xi give the same operator, in
+            % every form, with alpha = Inf the same as xi = 0. With neither,
+            % the network is perfectly conducting.
+            pairs = {{2, 0.5}, ...
+                     {[1 2 4], [1 0.5 0.25]}, ...
+                     {{@(s) 1 + s, 2, @(s) 4 + 0*s}, {@(s) 1./(1 + s), 0.5, 0.25}}, ...
+                     {[Inf 2 Inf], [0 0.5 0]}};
+            for k = 1:numel(pairs)
+                opa = perfusionop(tc.tree, alpha=pairs{k}{1}, phi=2, eta=0.03);
+                opx = perfusionop(tc.tree, xi=pairs{k}{2}, phi=2, eta=0.03);
+                tc.verifyEqual(opa.xi, opx.xi, AbsTol=1e-15);
+                tc.verifyEqual(opa.alpha, 1./opx.xi);
+            end
+            [~, va] = opa.solve(method='direct');
+            [~, vx] = opx.solve(method='direct');
+            tc.verifyEqual(va.sigma, vx.sigma, AbsTol=1e-14);
+            op = perfusionop(tc.tree, phi=2, eta=0.03);
+            tc.verifyEqual(op.xi, zeros(op.npt, 1));
         end
 
         function perEdgeCoefficients(tc)
             % Different constants on each edge: v = 1 at the root, v is
             % continuous at the junction, the flux Qσ + b balances there and
             % vanishes at the tips, and the ingress flux equals ∫σ.
-            op = perfusionop(tc.tree, xi=[1 0.3 3], alpha=[0.1 0.05 0.2], phi=2, P=0.03);
+            op = perfusionop(tc.tree, xi=[1 0.3 3], lambda=[0.1 0.05 0.2], phi=2, eta=0.03);
             [u, vars] = op.solve(method='direct');
             v1 = edgeEndValues(op, u, 1);
             v2 = edgeEndValues(op, u, 2);
@@ -256,9 +277,9 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
         end
 
         function networkEquationWithVariableCoefficients(tc)
-            % With smooth xi(s) and λ(s), a v' = v'/xi equals Qσ + b at the
+            % With smooth xi(s) and λ(s), α v' = v'/xi equals Qσ + b at the
             % nodes, where v' is computed by differentiating v on each chunk.
-            op = perfusionop(tc.tree, xi=tc.xif, alpha=tc.lamf, phi=2, P=0.03);
+            op = perfusionop(tc.tree, xi=tc.xif, lambda=tc.lamf, phi=2, eta=0.03);
             [u, vars] = op.solve(method='direct');
             n = op.n;
             D = lege.dermat(n);
@@ -275,7 +296,7 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
 
         function variableCoefficientSolversAgree(tc)
             for outer = [false true]
-                op = perfusionop(tc.tree, xi=tc.xif, alpha=tc.lamf, phi=2, P=0.03, outer=outer);
+                op = perfusionop(tc.tree, xi=tc.xif, lambda=tc.lamf, phi=2, eta=0.03, outer=outer);
                 [~, ref] = op.solve(method='direct');
                 configs = {{'method', 'direct', 'schur', true}, ...
                            {'method', 'gmres', 'schur', false}, ...
@@ -300,7 +321,7 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
             nlev = 7;
             vals = zeros(nlev, 1);
             for lev = 1:nlev
-                op = perfusionop(cgrph, xi=tc.xif, alpha=tc.lamf, phi=2, P=0.03);
+                op = perfusionop(cgrph, xi=tc.xif, lambda=tc.lamf, phi=2, eta=0.03);
                 u = op.solve(method='direct');
                 vals(lev) = u.bulk(targ(1), targ(2));
                 cgrph = refineIntoVertices(cgrph);
@@ -313,7 +334,7 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
         function perfectlyConductingEdge(tc)
             % xi = 0 on edge 2 only: v is constant there and equal to v at
             % the junction, and the ingress flux still equals ∫σ.
-            op = perfusionop(tc.tree, xi=[1 0 1], alpha=0.1, phi=2, P=0.03);
+            op = perfusionop(tc.tree, xi=[1 0 1], lambda=0.1, phi=2, eta=0.03);
             [u, vars] = op.solve(method='direct');
             v1 = edgeEndValues(op, u, 1);
             tc.verifyEqual(u.channel{2}, v1(2)*ones(size(u.channel{2})), AbsTol=tc.tol);
@@ -325,12 +346,16 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
             make = @(varargin) perfusionop(tc.tree, varargin{:});
             tc.verifyError(@() make(xi=[1 2]), id);                 % wrong length
             tc.verifyError(@() make(xi=-1), id);                    % negative
-            tc.verifyError(@() make(alpha=NaN), id);                % not finite
-            tc.verifyError(@() make(alpha=[0.1 -0.1 0.1]), id);     % negative on an edge
+            tc.verifyError(@() make(lambda=NaN), id);                % not finite
+            tc.verifyError(@() make(lambda=[0.1 -0.1 0.1]), id);     % negative on an edge
             tc.verifyError(@() make(xi={1, 2}), id);                % too few cells
             tc.verifyError(@() make(xi={@(s) [1 2], 1, 1}), id);    % wrong number of values
             tc.verifyError(@() make(xi={'a', 1, 1}), id);           % not a function or scalar
             tc.verifyError(@() make(xi='a'), id);                   % not numeric
+            tc.verifyError(@() make(xi=Inf), id);                   % xi must be finite
+            tc.verifyError(@() make(alpha=0), id);                  % area must be positive
+            tc.verifyError(@() make(alpha=[1 -1 1]), id);           % negative area
+            tc.verifyError(@() make(alpha=1, xi=1), 'perfusionop:alphaAndXi');
         end
 
     end

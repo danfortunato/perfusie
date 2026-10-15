@@ -30,7 +30,7 @@ immediately.
 ```matlab
 G = graphtools.gallery('L2_1_Tr9L');          % A traced terminal cell
 cgrph = graphtools.fit(G, smooth=1, tol=1e-3);  % Smooth chunkgraph fit
-op = perfusionop(cgrph, xi=0.004, phi=0.1, outer=true);
+op = perfusionop(cgrph, alpha=250, phi=0.1, outer=true);
 [u, vars] = op.solve();
 plot_perfusion(op, u)
 ```

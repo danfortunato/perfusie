@@ -19,17 +19,17 @@ order  = 16;
 outer  = false;
 
 %%% Physical parameters
-root  = 1;     % Indices of trachea roots
-xi    = 0.004; % Inverse channel width scaled by diffusion ratio
-alpha = 0.1;   % Inverse permeability
-phi   = 0.1;   % Yukawa parameter
-P     = 0.03;  % Henry's constant
+root   = 1;     % Indices of trachea roots
+alpha  = 250;   % Scaled channel area (1/xi)
+lambda = 0.1;   % Inverse permeability
+phi    = 0.1;   % Yukawa parameter
+eta    = 0.03;  % Henry's constant
 
 %%% Solver parameters
 method  = 'gmres';
 schur   = true;
 fmm     = true;
-precond = abs(alpha) < 0.01;
+precond = abs(lambda) < 0.01;
 tol     = 1e-10;
 
 % Import the graph, smooth it, and discretize it
@@ -68,7 +68,7 @@ for k = 1:nref+1
     hvals(k) = min_vertex_arc(cgrph);
     fprintf('Level %d: h = %.3g, %d unknowns\n', k-1, hvals(k), npts(k));
 
-    op = perfusionop(cgrph, root=root, outer=outer, xi=xi, alpha=alpha, phi=phi, P=P);
+    op = perfusionop(cgrph, root=root, outer=outer, alpha=alpha, lambda=lambda, phi=phi, eta=eta);
     [u, ~] = op.solve(method=method, schur=schur, fmm=fmm, precond=precond, tol=tol);
 
     utarg_far(k)   = u.bulk(xtarg_far,   ytarg_far);

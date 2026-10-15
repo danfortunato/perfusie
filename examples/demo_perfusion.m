@@ -10,17 +10,17 @@ nover = 1;
 outer = true;
 
 %%% Physical parameters
-root  = 1;     % Indices of trachea roots
-xi    = 0.004; % Inverse channel width scaled by diffusion ratio
-alpha = 0;     % Inverse permeability
-phi   = 0.1;   % Yukawa parameter
-P     = 0.03;  % Henry's constant
+root   = 1;     % Indices of trachea roots
+alpha  = 250;   % Scaled channel area (1/xi)
+lambda = 0;     % Inverse permeability
+phi    = 0.1;   % Yukawa parameter
+eta    = 0.03;  % Henry's constant
 
 %%% Solver parameters
 method   = 'direct';
 schur    = true;
 fmm      = false;
-precond  = abs(alpha) < 0.01;
+precond  = abs(lambda) < 0.01;
 showcond = false;
 tol      = 1e-6;
 
@@ -30,7 +30,7 @@ cgrph = graphtools.fit(graphtools.gallery(name), smooth=smooth, tol=fittol, orde
 fprintf('Time to process graph:      %gs\n', toc(t));
 
 t = tic;
-op = perfusionop(cgrph, root=root, outer=outer, xi=xi, alpha=alpha, phi=phi, P=P);
+op = perfusionop(cgrph, root=root, outer=outer, alpha=alpha, lambda=lambda, phi=phi, eta=eta);
 [u, vars] = op.solve(method=method, schur=schur, fmm=fmm, precond=precond, tol=tol, showcond=showcond);
 fprintf('Time to solve:              %gs\n', toc(t));
 
