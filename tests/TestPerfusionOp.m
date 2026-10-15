@@ -4,7 +4,8 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
 %   its root at vertex 1. Tests check the boundary and vertex conditions of
 %   the solution, flux conservation, the perfectly conducting limit
 %   (xi = 0), agreement between solvers, and the arc-length integration
-%   helpers.
+%   helpers, with xi and λ given as scalars, per-edge constants, smooth
+%   functions of arc length, and nodal values.
 
     properties
         segment  % Single straight edge from vertex 1 (root) to vertex 2
@@ -14,6 +15,9 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
     properties (Constant)
         params = {'xi', 1, 'phi', 2, 'P', 0.03}
         tol = 1e-10
+        % Smooth, positive xi(s) and λ(s) on each edge of the tree
+        xif = {@(s) 1 + 0.5*sin(3*s), @(s) 0.5 + s.^2, @(s) 2 - 0.8*cos(2*s)}
+        lamf = {@(s) 0.1 + 0.05*s, @(s) 0.2*ones(size(s)), @(s) 0.05 + 0.1*s.^2}
     end
 
     methods (TestClassSetup)
@@ -68,12 +72,12 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
         function ingressFluxEqualsTissueFlux(tc)
             % Integrating the conservation law along the network and using
             % the Kirchhoff and tip conditions, the flux entering at the
-            % root, -a v'(0) = -b_1/xi, equals the total flux into the
+            % root, -a v'(0) = -b_1, equals the total flux into the
             % tissue, the integral of σ.
             for alpha = [0 0.1]
                 op = perfusionop(tc.tree, tc.params{:}, alpha=alpha);
                 [~, vars] = op.solve(method='direct');
-                ingress = -vars.b(1) / op.xi;
+                ingress = -vars.b(1);
                 tissue = sum(vars.sigma .* op.cgrph.wts(:));
                 tc.verifyEqual(tissue, ingress, RelTol=1e-10);
                 tc.verifyGreaterThan(ingress, 0);
@@ -113,7 +117,7 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
             % integral uses a polar grid, so the tolerance is loose.
             op = perfusionop(tc.tree, tc.params{:}, alpha=0.1, outer=true);
             [u, vars] = op.solve(method='direct');
-            ingress = -vars.b(1) / op.xi;
+            ingress = -vars.b(1);
 
             r = op.outer.r(:,:);
             c = mean(r, 2);
@@ -199,15 +203,134 @@ classdef TestPerfusionOp < matlab.unittest.TestCase
         end
 
         function integrationRows(tc)
-            % introw1{k}*f = ∫ f and introw2{k}*f = (Q² f)(L) on edge k.
-            op = perfusionop(tc.tree, tc.params{:});
+            % With xi(s) = 1 + s on each edge: introw1{k}*f = ∫ f,
+            % Qxi{k} = s + s²/2, and introwxi{k}*f = (Q xi Q f)(L).
+            xi = repmat({@(s) 1 + s}, 1, 3);
+            op = perfusionop(tc.tree, xi=xi, phi=2, P=0.03);
             for k = 1:op.nedges
                 s = op.s{k};
                 f = cos(3*s);
                 L = op.L(k);
+                QxiQf = (1 - cos(3*L))/9 + (-L*cos(3*L)/3 + sin(3*L)/9)/3;
                 tc.verifyEqual(op.introw1{k}*f, sin(3*L)/3, AbsTol=1e-12);
-                tc.verifyEqual(op.introw2{k}*f, (1 - cos(3*L))/9, AbsTol=1e-12);
+                tc.verifyEqual(op.Qxi{k}, s + s.^2/2, AbsTol=1e-12);
+                tc.verifyEqual(op.introwxi{k}*f, QxiQf, AbsTol=1e-12);
             end
+        end
+
+        function coefficientFormsAgree(tc)
+            % A scalar, one value per edge, one function per edge, and one
+            % value per node all give the same operator.
+            ref = perfusionop(tc.tree, xi=0.7, alpha=0.1, phi=2, P=0.03);
+            [~, vref] = ref.solve(method='direct');
+            npt = ref.npt;
+            xis = {0.7*[1 1 1], {@(s) 0.7 + 0*s, 0.7, @(s) 0.7*ones(size(s))}, 0.7*ones(npt, 1)};
+            alphas = {0.1*[1 1 1], {0.1, @(s) 0.1 + 0*s, 0.1}, 0.1*ones(npt, 1)};
+            for k = 1:numel(xis)
+                op = perfusionop(tc.tree, xi=xis{k}, alpha=alphas{k}, phi=2, P=0.03);
+                tc.verifyEqual(op.xi, ref.xi);
+                tc.verifyEqual(op.alpha, ref.alpha);
+                [~, vars] = op.solve(method='direct');
+                tc.verifyLessThan(norm(vars.sigma - vref.sigma) / norm(vref.sigma), 1e-13);
+            end
+        end
+
+        function perEdgeCoefficients(tc)
+            % Different constants on each edge: v = 1 at the root, v is
+            % continuous at the junction, the flux Qσ + b balances there and
+            % vanishes at the tips, and the ingress flux equals ∫σ.
+            op = perfusionop(tc.tree, xi=[1 0.3 3], alpha=[0.1 0.05 0.2], phi=2, P=0.03);
+            [u, vars] = op.solve(method='direct');
+            v1 = edgeEndValues(op, u, 1);
+            v2 = edgeEndValues(op, u, 2);
+            v3 = edgeEndValues(op, u, 3);
+            tc.verifyEqual(v1(1), 1, AbsTol=tc.tol);
+            tc.verifyEqual(v2(1), v1(2), AbsTol=tc.tol);
+            tc.verifyEqual(v3(1), v1(2), AbsTol=tc.tol);
+            intsigma = arrayfun(@(k) op.introw1{k} * ...
+                vars.sigma(op.sigma_starts(k):op.sigma_starts(k+1)-1), 1:3);
+            fluxend = intsigma + vars.b.';
+            tc.verifyEqual(fluxend(1) - vars.b(2) - vars.b(3), 0, AbsTol=tc.tol);
+            tc.verifyEqual(fluxend(2:3), [0 0], AbsTol=tc.tol);
+            tc.verifyEqual(-vars.b(1), sum(intsigma), RelTol=1e-10);
+        end
+
+        function networkEquationWithVariableCoefficients(tc)
+            % With smooth xi(s) and λ(s), a v' = v'/xi equals Qσ + b at the
+            % nodes, where v' is computed by differentiating v on each chunk.
+            op = perfusionop(tc.tree, xi=tc.xif, alpha=tc.lamf, phi=2, P=0.03);
+            [u, vars] = op.solve(method='direct');
+            n = op.n;
+            D = lege.dermat(n);
+            for k = 1:op.nedges
+                chnkr = op.cgrph.echnks(k);
+                idx = op.sigma_starts(k):op.sigma_starts(k+1)-1;
+                ds = reshape(vecnorm(chnkr.d(:,:)), n, []);
+                dv = (D * reshape(u.channel{k}, n, [])) ./ ds;
+                flux = op.iintegral(chnkr, vars.sigma(idx), 1) + vars.b(k);
+                tc.verifyLessThan(norm(dv(:)./op.xi(idx) - flux, inf) / norm(flux, inf), 1e-6, ...
+                    sprintf('edge %d', k));
+            end
+        end
+
+        function variableCoefficientSolversAgree(tc)
+            for outer = [false true]
+                op = perfusionop(tc.tree, xi=tc.xif, alpha=tc.lamf, phi=2, P=0.03, outer=outer);
+                [~, ref] = op.solve(method='direct');
+                configs = {{'method', 'direct', 'schur', true}, ...
+                           {'method', 'gmres', 'schur', false}, ...
+                           {'method', 'gmres', 'schur', true}};
+                if ( exist('hfmm2d', 'file') > 0 )
+                    configs{end+1} = {'method', 'gmres', 'schur', true, 'fmm', true};
+                end
+                for k = 1:numel(configs)
+                    [~, vars] = op.solve(configs{k}{:}, tol=1e-12);
+                    err = norm(vars.sigma - ref.sigma) / norm(ref.sigma);
+                    tc.verifyLessThan(err, 1e-8, ...
+                        sprintf('outer=%d %s', outer, strjoin(string(configs{k}), ' ')));
+                end
+            end
+        end
+
+        function convergenceWithVariableCoefficients(tc)
+            % Refining dyadically into the vertices, u at a target converges
+            % to high accuracy with smooth xi(s) and λ(s).
+            cgrph = tc.tree;
+            targ = [0.35 0.8];
+            nlev = 7;
+            vals = zeros(nlev, 1);
+            for lev = 1:nlev
+                op = perfusionop(cgrph, xi=tc.xif, alpha=tc.lamf, phi=2, P=0.03);
+                u = op.solve(method='direct');
+                vals(lev) = u.bulk(targ(1), targ(2));
+                cgrph = refineIntoVertices(cgrph);
+            end
+            diffs = abs(diff(vals));
+            tc.verifyTrue(all(diff(diffs) < 0), 'differences should decrease');
+            tc.verifyLessThan(diffs(end), 1e-11);
+        end
+
+        function perfectlyConductingEdge(tc)
+            % xi = 0 on edge 2 only: v is constant there and equal to v at
+            % the junction, and the ingress flux still equals ∫σ.
+            op = perfusionop(tc.tree, xi=[1 0 1], alpha=0.1, phi=2, P=0.03);
+            [u, vars] = op.solve(method='direct');
+            v1 = edgeEndValues(op, u, 1);
+            tc.verifyEqual(u.channel{2}, v1(2)*ones(size(u.channel{2})), AbsTol=tc.tol);
+            tc.verifyEqual(-vars.b(1), sum(vars.sigma .* op.cgrph.wts(:)), RelTol=1e-10);
+        end
+
+        function badCoefficients(tc)
+            id = 'perfusionop:badCoefficient';
+            make = @(varargin) perfusionop(tc.tree, varargin{:});
+            tc.verifyError(@() make(xi=[1 2]), id);                 % wrong length
+            tc.verifyError(@() make(xi=-1), id);                    % negative
+            tc.verifyError(@() make(alpha=NaN), id);                % not finite
+            tc.verifyError(@() make(alpha=[0.1 -0.1 0.1]), id);     % negative on an edge
+            tc.verifyError(@() make(xi={1, 2}), id);                % too few cells
+            tc.verifyError(@() make(xi={@(s) [1 2], 1, 1}), id);    % wrong number of values
+            tc.verifyError(@() make(xi={'a', 1, 1}), id);           % not a function or scalar
+            tc.verifyError(@() make(xi='a'), id);                   % not numeric
         end
 
     end
@@ -225,4 +348,16 @@ function v = edgeEndValues(op, u, k)
     last  = find(chnkr.adj(2,:) <= 0, 1);
     v = [lege.matrin(n, -1) * vals(:,first), ...
          lege.matrin(n,  1) * vals(:,last)];
+end
+
+function cgrph = refineIntoVertices(cgrph)
+%REFINEINTOVERTICES   Split the first and last chunk of every edge.
+%   Halves the chunks touching each vertex, where σ is singular; the
+%   chunkgraph refinement then balances neighboring chunks.
+    split = cell(1, numel(cgrph.echnks));
+    for k = 1:numel(cgrph.echnks)
+        adj = cgrph.echnks(k).adj;
+        split{k} = unique([find(adj(1,:) <= 0, 1), find(adj(2,:) <= 0, 1)]);
+    end
+    cgrph = refine(cgrph, struct('splitchunks', {split}));
 end

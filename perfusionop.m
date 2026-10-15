@@ -4,25 +4,28 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
 %   the network CGRPH, a chunkgraph embedded in the plane:
 %
 %     (Δ - φ²) u = 0                in the tissue, off the network,
-%     λ [u_n] - (η v - u) = 0       on each edge (membrane permeation),
-%     (a v')' - [u_n] = 0           on each edge (conservation),
+%     λ(s) [u_n] - (η v - u) = 0    on each edge (membrane permeation),
+%     (a(s) v')' - [u_n] = 0        on each edge (conservation),
 %     v continuous, Σ ±a v' = 0     at each non-root vertex (Kirchhoff),
 %     v = 1                         at each root vertex,
 %
 %   where u is the tissue concentration, v the network concentration,
-%   [u_n] the jump in normal derivative across an edge, and a = 1/xi the
-%   scaled channel cross-sectional area. With OUTER = true, the tissue is
-%   bounded by a circle with zero-flux conditions; otherwise it fills the
-%   plane.
+%   [u_n] the jump in normal derivative across an edge, a(s) = 1/xi(s) the
+%   scaled channel cross-sectional area, and λ(s) the inverse membrane
+%   permeability; both may vary along each edge. With OUTER = true, the
+%   tissue is bounded by a circle with zero-flux conditions; otherwise it
+%   fills the plane.
 %
 %   The tissue concentration is represented as a single-layer potential
-%   u = S σ on the network (plus S τ on the outer boundary), and on each
-%   edge v = xi Q² σ + a_k + b_k s, where Q is arc-length integration from
-%   the start of the edge. This yields a second-kind-like system for σ (and
-%   τ) coupled to two constants (a_k, b_k) per edge.
+%   u = S σ on the network (plus S τ on the outer boundary), and on edge k
+%   as v = Q xi Q σ + a_k + b_k (Q xi), where Q is arc-length integration
+%   from the start of the edge. Then a v' = Q σ + b_k, so b_k is the flux
+%   a v' at the start of edge k. This yields a second-kind-like system for
+%   σ (and τ) coupled to two constants (a_k, b_k) per edge.
 %
 %   OP = PERFUSIONOP(CGRPH, Name=Value) sets parameters:
-%     xi    - inverse scaled channel area, 1/a (default 0).
+%     xi    - inverse scaled channel area, 1/a; xi = 0 is a perfectly
+%             conducting network (default 0).
 %     alpha - inverse membrane permeability, λ (default 0).
 %     phi   - Yukawa parameter φ; 1/φ is the decay length in the tissue
 %             (default 0).
@@ -30,6 +33,15 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
 %     root  - indices of the root (ingress) vertices of CGRPH (default 1).
 %     outer - if true, enclose the network in a no-flux circle 1.3 times
 %             the radius of its minimal bounding circle (default false).
+%
+%   xi and alpha must be nonnegative, and each may be given as
+%     - a scalar, the same on every edge;
+%     - a vector with one value per edge, constant on each edge;
+%     - a cell array with one entry per edge, each a function handle f(s)
+%       of arc length s in [0, L_k] along that edge (or a scalar);
+%     - a vector with one value per discretization node, ordered as the
+%       nodes of CGRPH.
+%   They are stored as values at the nodes.
 %
 %   Example:
 %     cgrph = graphtools.fit(graphtools.gallery('L1_1_Tr9L'));
@@ -48,8 +60,8 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
     properties
         cgrph        % Network, a chunkgraph
         root         % Indices of the root vertices
-        xi           % Inverse scaled channel area
-        alpha        % Inverse membrane permeability
+        xi           % Inverse scaled channel area at each node
+        alpha        % Inverse membrane permeability at each node
         phi          % Yukawa parameter
         P            % Henry's constant
         nverts       % Number of vertices
@@ -63,7 +75,8 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
         L            % Arc length of each edge
         s            % Arc-length coordinate at the nodes of each edge
         introw1      % Row vectors giving ∫σ over each edge
-        introw2      % Row vectors giving (Q²σ)(L) on each edge
+        introwxi     % Row vectors giving (Q xi Q σ)(L) on each edge
+        Qxi          % Q xi at the nodes of each edge
         iintegral    % Handle to the arc-length antiderivative routine
         outer        % Outer boundary chunker, or [] if none
     end
@@ -74,8 +87,8 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
         %PERFUSIONOP   Construct a perfusion operator. See PERFUSIONOP.
             arguments
                 cgrph            chunkgraph
-                opts.xi    (1,1) double = 0
-                opts.alpha (1,1) double = 0
+                opts.xi                 = 0
+                opts.alpha              = 0
                 opts.phi   (1,1) double = 0
                 opts.P     (1,1) double = 0.03
                 opts.root  (1,:) double = 1
@@ -91,16 +104,25 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
             op.nbc          = 2*op.nedges;
             op.ndof         = op.npt + op.nbc;
             op.sigma_starts = cumsum([1 cgrph.echnks.npt]);
-            op.xi           = opts.xi;
-            op.alpha        = opts.alpha;
             op.phi          = opts.phi;
             op.P            = opts.P;
             op.root         = opts.root;
             op.L            = arrayfun(@(chnkr) sum(chnkr.wts, 'all'),    cgrph.echnks);
             op.s            = arrayfun(@(chnkr) vec(arclengthfun(chnkr)), cgrph.echnks, uniformoutput=false);
+            op.xi           = nodal_values(op, opts.xi,    'xi');
+            op.alpha        = nodal_values(op, opts.alpha, 'alpha');
             op.introw1      = arrayfun(@(chnkr) introw(chnkr, 1),         cgrph.echnks, uniformoutput=false);
-            op.introw2      = arrayfun(@(chnkr) introw(chnkr, 2),         cgrph.echnks, uniformoutput=false);
             op.iintegral    = @iintegral;
+
+            % (Q xi Q σ)(L) = ∫ xi (Q σ) ds = (Qᵀ(w∘xi))ᵀ σ on each edge
+            op.introwxi = cell(1, op.nedges);
+            op.Qxi      = cell(1, op.nedges);
+            for k = 1:op.nedges
+                chnkr = cgrph.echnks(k);
+                xi_k  = op.xi(op.sigma_starts(k):op.sigma_starts(k+1)-1);
+                op.introwxi{k} = iintegralT(chnkr, chnkr.wts(:) .* xi_k, 1).';
+                op.Qxi{k}      = iintegral(chnkr, xi_k, 1);
+            end
 
             if ( opts.outer )
                 scale = 1.3;
@@ -174,9 +196,11 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
 
             [xi, alpha, phi, P] = deal(op.xi, op.alpha, op.phi, op.P);
 
-            Ls = op.L;
-            introw1 = op.introw1;
-            introw2 = op.introw2;
+            introw1  = op.introw1;
+            introwxi = op.introwxi;
+            % ∫ xi over each edge: (Q xi)(L), the b coefficient of v at the end
+            intxi = arrayfun(@(k) sum(op.cgrph.echnks(k).wts(:) .* ...
+                xi(op.sigma_starts(k):op.sigma_starts(k+1)-1)), 1:op.nedges);
 
             if ( opts.fmm )
                 cgrph = op.cgrph;
@@ -185,7 +209,8 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
                 cormat = chunkermat(op.cgrph, Skern, struct(rcip=false, corrections=true));
                 S = @(sigma,tol) real(chunkermatapply(chnkrs, Skern, sigma, cormat, ...
                     struct(rcip=false, accel=true, eps=tol)));
-                A{1,1} = @(sigma,tol) S(sigma,tol) + alpha*sigma - P*xi*iintegral(cgrph, sigma, 2);
+                A{1,1} = @(sigma,tol) S(sigma,tol) + alpha.*sigma ...
+                    - P*iintegral(cgrph, xi.*iintegral(cgrph, sigma, 1), 1);
 
                 if ( opts.precond )
                     Dpkern = kernel('helm', 'dprime', 1i*phi);
@@ -206,11 +231,14 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
                 chopts.rcip = false;
                 Skern = kernel('helm', 's', 1i*phi);
                 S = chunkermat(op.cgrph, Skern, chopts);
-                I = eye(size(S));
-                Qs  = arrayfun(@myintmat, op.cgrph.echnks, uniformoutput=false);
-                Qs2 = cellfun(@(x) x^2, Qs, uniformoutput=false);
-                Q2 = matlab.internal.math.blkdiag(Qs2{:});
-                A{1,1} = S + alpha*I - P*xi*Q2;
+                Qs = arrayfun(@myintmat, op.cgrph.echnks, uniformoutput=false);
+                QxiQs = cell(size(Qs));
+                for k = 1:op.nedges
+                    xi_k = xi(op.sigma_starts(k):op.sigma_starts(k+1)-1);
+                    QxiQs{k} = Qs{k} * (xi_k .* Qs{k});
+                end
+                QxiQ = matlab.internal.math.blkdiag(QxiQs{:});
+                A{1,1} = S + diag(alpha) - P*QxiQ;
                 if ( opts.precond )
                     Dpkern = kernel('helm', 'dprime', 1i*phi);
                     %Dp = chunkermat(op.cgrph, Dpkern, chopts);
@@ -222,9 +250,10 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
                 end
             end
 
-            s = matlab.internal.math.blkdiag(op.s{:});
-            one = spones(s);
-            A{1,2} = [-P*one  -P*s];
+            ones_k = cellfun(@(q) ones(size(q)), op.Qxi, uniformoutput=false);
+            one = sparse(matlab.internal.math.blkdiag(ones_k{:}));
+            Qxi = sparse(matlab.internal.math.blkdiag(op.Qxi{:}));
+            A{1,2} = [-P*one  -P*Qxi];
 
             nedges = op.nedges;
             npt = op.npt;
@@ -255,15 +284,17 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
                     b2 = zeros(1, nedges);
                     a1(edge_id1) = 1;
                     a2(edge_id2) = 1;
+                    % v at the end of an edge is (Q xi Q σ)(L) + a + b (Q xi)(L);
+                    % at the start it is a.
                     if edge_dir(k_edge) == 1
                         idx = sigma_starts(edge_id1):sigma_starts(edge_id1+1)-1;
-                        sigma1(idx) = xi * introw2{edge_id1};
-                        b1(edge_id1) = Ls(edge_id1);
+                        sigma1(idx) = introwxi{edge_id1};
+                        b1(edge_id1) = intxi(edge_id1);
                     end
                     if edge_dir(k_edge+1) == 1
                         idx = sigma_starts(edge_id2):sigma_starts(edge_id2+1)-1;
-                        sigma2(idx) = xi * introw2{edge_id2};
-                        b2(edge_id2) = Ls(edge_id2);
+                        sigma2(idx) = introwxi{edge_id2};
+                        b2(edge_id2) = intxi(edge_id2);
                     end
                     sigma_cont = sigma1 - sigma2;
                     a_cont     = a1 - a2;
@@ -282,19 +313,18 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
                     a_kirchoff(edge_id) = 1;
                     if edge_dir(k_edge) == 1
                         idx = sigma_starts(edge_id):sigma_starts(edge_id+1)-1;
-                        sigma_kirchoff(idx) = xi * introw2{edge_id};
-                        b_kirchoff(edge_id) = Ls(edge_id);
+                        sigma_kirchoff(idx) = introwxi{edge_id};
+                        b_kirchoff(edge_id) = intxi(edge_id);
                     end
                     bcval(ibc) = 1;
                 else
                     for k_edge = 1:length(edge_ids)
                         edge_id = edge_ids(k_edge);
                         idx = sigma_starts(edge_id):sigma_starts(edge_id+1)-1;
-                        % Note: The flux on each edge is given by 1/xi * U'.
-                        % But here, we scale the flux by an overall factor of xi
-                        % to gracefully handle the case when xi = 0.
+                        % The flux a v' on each edge is Q σ + b: b at the
+                        % start and ∫σ + b at the end.
                         if edge_dir(k_edge) == 1
-                            sigma_kirchoff(idx) = xi * introw1{edge_id};
+                            sigma_kirchoff(idx) = introw1{edge_id};
                             b_kirchoff(edge_id) = 1;
                         elseif edge_dir(k_edge) == -1
                             b_kirchoff(edge_id) = -1;
@@ -556,10 +586,10 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
             for k = 1:op.nedges
                 idx = op.sigma_starts(k):op.sigma_starts(k+1)-1;
                 sigma_k = sigma(idx);
-                aa = repmat(a(k), length(sigma_k), 1);
-                bb = repmat(b(k), length(sigma_k), 1);
+                xi_k = op.xi(idx);
                 chnkr_k = op.cgrph.echnks(k);
-                u.channel{k} = op.xi*iintegral(chnkr_k, sigma_k, 2) + aa + bb.*op.s{k};
+                u.channel{k} = iintegral(chnkr_k, xi_k.*iintegral(chnkr_k, sigma_k, 1), 1) ...
+                    + a(k) + b(k)*op.Qxi{k};
             end
 
             cgrph = op.cgrph;
@@ -599,8 +629,15 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
         %   It then prints the relative difference between (1) and (4).
         %
         %   The ingress flux sums, over every root vertex and every edge
-        %   incident to it, the flux a v' leaving the root along that edge
-        %   (Prop. "Conservation of O2" in the paper).
+        %   incident to it, the flux a v' leaving the root along that edge.
+        %   Integrating the model over the tissue and the network shows
+        %   that it equals the total absorption:
+        %
+        %     φ² ∫ u dx = Σ_{roots v} Σ_{edges j at v} p_{j,v} (a_j v_j')(v),
+        %
+        %   where p_{j,v} is -1 if edge j starts at v and +1 if it ends
+        %   there. Quantity (2) divides v' by xi at the root, so it is not
+        %   finite where xi = 0 there.
         %
         %   VALS = CHECK_CONSERVATION(...) also returns the four quantities
         %   in a struct with fields ingress, ingress_dv, int_sigma, and
@@ -622,7 +659,7 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
             % incidence sign p is -1 if the edge starts at the root (s = 0)
             % and +1 if it ends there (s = L), and the ingress through that
             % edge is p*(a v') evaluated at the root. On an edge,
-            % a v' = v'/xi = Qσ + b/xi.
+            % a v' = Qσ + b.
             n = op.n;
             Dleg = lege.dermat(n);
             ingress = 0;
@@ -644,10 +681,13 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
                         ich = find(chnkr.adj(2,:) <= 0, 1);
                         interp = lege.matrin(n, 1);
                     end
-                    ingress = ingress + p * (Qsigma + vars.b(j)/op.xi);
+                    ingress = ingress + p * (Qsigma + vars.b(j));
                     ds = vecnorm(chnkr.d(:,:,ich)).';
-                    vch = u.channel{j}((ich-1)*n + (1:n));
-                    ingress_dv = ingress_dv + p * (interp * (Dleg ./ ds) * vch) / op.xi;
+                    nodes = (ich-1)*n + (1:n);
+                    vch = u.channel{j}(nodes);
+                    xich = op.xi(op.sigma_starts(j) - 1 + nodes);
+                    % a v' = v'/xi at the root; undefined where xi = 0
+                    ingress_dv = ingress_dv + p * (interp * (Dleg ./ ds) * vch) / (interp * xich);
                 end
             end
             fprintf('    (1)  ingress (b)     = %.16g\n', ingress);
@@ -695,6 +735,58 @@ classdef perfusionop %#ok<*PROP,*PROPLC>
             end
         end
 
+    end
+
+end
+
+function vals = nodal_values(op, val, name)
+%NODAL_VALUES   Values of an edge coefficient at the nodes of the network.
+%   VALS = NODAL_VALUES(OP, VAL, NAME) expands VAL, given in any of the
+%   forms PERFUSIONOP accepts for xi and alpha, to a column vector of values
+%   at the nodes of OP.cgrph. NAME is used in error messages.
+
+    starts = op.sigma_starts;
+    id = 'perfusionop:badCoefficient';
+    if ( iscell(val) )
+        if ( numel(val) ~= op.nedges )
+            error(id, '%s must have one cell per edge (%d), not %d.', ...
+                name, op.nedges, numel(val));
+        end
+        vals = zeros(op.npt, 1);
+        for k = 1:op.nedges
+            idx = starts(k):starts(k+1)-1;
+            f = val{k};
+            if ( isa(f, 'function_handle') )
+                vk = f(op.s{k});
+            elseif ( isnumeric(f) && isscalar(f) )
+                vk = f;
+            else
+                error(id, '%s{%d} must be a function handle or a scalar.', name, k);
+            end
+            if ( ~isscalar(vk) && numel(vk) ~= numel(idx) )
+                error(id, '%s{%d} returned %d values for %d nodes.', ...
+                    name, k, numel(vk), numel(idx));
+            end
+            vals(idx) = vk(:);
+        end
+    elseif ( isnumeric(val) )
+        val = val(:);
+        if ( isscalar(val) )
+            vals = repmat(val, op.npt, 1);
+        elseif ( numel(val) == op.nedges )
+            vals = repelem(val, diff(starts));
+        elseif ( numel(val) == op.npt )
+            vals = val;
+        else
+            error(id, ['%s must be a scalar or have one value per edge (%d) ' ...
+                'or per node (%d), not %d.'], name, op.nedges, op.npt, numel(val));
+        end
+    else
+        error(id, '%s must be numeric or a cell array.', name);
+    end
+
+    if ( ~isreal(vals) || any(~isfinite(vals)) || any(vals < 0) )
+        error(id, '%s must be real, finite, and nonnegative.', name);
     end
 
 end
